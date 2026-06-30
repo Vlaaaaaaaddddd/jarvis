@@ -1,7 +1,7 @@
 import os 
 from google import genai
 
-from jarvis.core import BaseLLM
+from jarvis.config import BaseLLM
 
 class Gemini(BaseLLM):
     def __init__(self):

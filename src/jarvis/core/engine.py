@@ -1,26 +1,38 @@
-from jarvis.core import BaseTool, BaseLLM
+# jarvis/core/engine.py
+import asyncio
+import time
+import jarvis.config.ui_config as cfg
+from jarvis.front.ui import TerminalUI
 
 class JarvisEngine:
-    def __init__(self, llm: BaseLLM = None):
-        self._tools = {}
-        self._llm = llm
-    def register_tool(self, tool: BaseTool):
-        command_name = tool.name.lower()
-        self._tools[command_name] = tool
-        print(f"[Engine] Инструмент успешно подключен: {tool.name}")
+    def __init__(self):
+        self.ui = TerminalUI()
+        self._is_running = False
 
-    async def handle_command(self, user_input: str) -> str:
-        """Получаем команду от пользователя и ищет подходящий инструмент"""
-        command = user_input.strip().lower()
+    async def start(self):
+        """Запуск основного цикла приложения (сборка цикла)"""
+        self.ui.start()
+        self._is_running = True
+        
+        start_time = time.time()
+        try:
+            while self._is_running:
+                # Считаем прошедшее время для математики вращения сферы
+                current_time = time.time() - start_time
+                
+                # Передаем время в UI для рендеринга текущего состояния сферы
+                self.ui.render_frame(current_time)
+                
+                # Контролируем частоту кадров (FPS) без блокировки потока
+                await asyncio.sleep(cfg.RENDER_INTERVAL)
+                
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self.stop()
 
-        if not command:
-            return "Команда пустая"
-        
-        if command in self._tools:
-            tool = self._tools[command]
-            return await tool.execute()
-        if self._llm:
-            print('\nДжарвис: ')
-            return await self._llm.generate_response(user_input)
-        
-        return f"Команды '{user_input}' нет, и ИИ-ассистент не подключен."
+    def stop(self):
+        """Корректное завершение работы и очистка терминала"""
+        if self._is_running:
+            self._is_running = False
+            self.ui.stop()

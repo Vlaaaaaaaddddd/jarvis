@@ -8,3 +8,28 @@ wheels/
 
 # Virtual environments
 .venv
+.env
+
+# Secrets and API keys
+.env.*.local
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_rsa.*
+*.secret
+secrets.json
+api_keys.json
+config.local.json
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/

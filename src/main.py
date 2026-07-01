@@ -1,13 +1,13 @@
 import asyncio
 import sys
 from dotenv import load_dotenv
-from jarvis.core.engine import JarvisEngine
+
+from bootstrap import create_app
 
 async def main():
     load_dotenv()
+    engine = create_app()
 
-    engine = JarvisEngine()
-    
     try:
         await engine.start()
     except KeyboardInterrupt:

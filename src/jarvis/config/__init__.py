@@ -5,4 +5,5 @@ __all__ = [
     'weekdays',
     'BaseTool',
     'BaseLLM',
+    'BaseUI'
     ]

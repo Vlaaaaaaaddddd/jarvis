@@ -23,7 +23,7 @@ class TerminalUI:
 
         for i, char in enumerate(ramp):
             approx_L = i / (ramp_len - 1) if ramp_len > 1 else 0.0
-            color = self.term.bold_green if approx_L > 0.8 else self.term.green
+            color = self.term.bold_white if approx_L > 0.8 else self.term.grey
             styled_list.append(color(char))
         
         # Переводим в NumPy массив объектов, чтобы использовать векторный выбор

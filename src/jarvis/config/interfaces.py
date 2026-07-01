@@ -29,3 +29,13 @@ class BaseUI(ABC):
     @abstractmethod
     def stop(self) -> None:
         pass
+
+class BaseInputHandler(ABC):
+    @abstractmethod
+    async def listen(self) -> str:
+        pass
+
+class BaseOutputHandler(ABC):
+    @abstractmethod
+    async def broadcast(self, response_text: str) -> None:
+        pass

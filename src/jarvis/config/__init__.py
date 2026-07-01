@@ -6,4 +6,6 @@ __all__ = [
     'BaseTool',
     'BaseLLM',
     'BaseUI'
+    'BaseInputHandler',
+    'BaseOutputHandler'
     ]

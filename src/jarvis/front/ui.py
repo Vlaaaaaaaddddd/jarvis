@@ -4,17 +4,15 @@ import jarvis.config.ui_config as cfg
 import jarvis.utils.math_3d as m3d
 
 class TerminalUI:
-    def __init__(self):
-
+    def __init__(self, message=None):
         self.term = Terminal()
+        self.status = "СИСТЕМА АКТИВНА"
+        self.input_buffer = ""
+        self._cbreak_ctx = None
+        self.messages = [("Джарвис", message)] if message else []
 
         # Генерируем базовые точки один раз при инициализации
         self.base_donut = m3d.generate_donut()
-        
-        # Временные заглушки для демонстрации разметки интерфейса
-        self.status = "СИСТЕМА АКТИВНА"
-        self.input_buffer = ""
-        self.messages = [("Джарвис", "Отрисовка идет")]
 
         # Заранее создаем массив, где символы уже обернуты в цвета 
         ramp = cfg.SHADING_RAMP
@@ -31,11 +29,15 @@ class TerminalUI:
 
     def start(self):
         """Вход в полноэкранный режим"""
+        self._cbreak_ctx = self.term.cbreak()
+        self._cbreak_ctx.__enter__()
         print(self.term.enter_fullscreen + self.term.hide_cursor + self.term.clear)
 
     def stop(self):
         """Выход из полноэкранного режима """
         print(self.term.exit_fullscreen + self.term.normal_cursor)
+        if self._cbreak_ctx:
+            self._cbreak_ctx.__exit__(None, None, None)
 
     def _draw_string(self, matrix, row, col, text, color_func=None):
         """Прямая безопасная запись строки в двумерную матрицу кадра"""
@@ -94,34 +96,59 @@ class TerminalUI:
         # Инициализируем пустую текстовую матрицу кадра
         frame = np.full((h, w), " ", dtype=object)
 
-        # 1. Строим статические рамки киберпанк-дашборда
-        frame[0, :] = self.term.cyan("-")
-        frame[2, :] = self.term.cyan("-")
-        frame[h - 4, :] = self.term.cyan("-")
-        frame[h - 2, :] = self.term.cyan("-")
-        frame[:, 0] = self.term.cyan("|")
-        frame[:, w - 1] = self.term.cyan("|")
-        frame[2:h-4, cfg.ANIM_ZONE_W] = self.term.cyan("│")
+        self._draw_borders(frame, h, w)
+        self._draw_headers(frame)
+        self._embed_donut(frame, h, current_time)      # Твоя математическая сфера
+        self._draw_chat_history(frame, h, w)           # Правая часть (вывод ответов)
+        self._draw_input_zone(frame, h, w)
 
+        frame[h - 1, w - 1] = "" 
+        output_data = "".join("".join(row) for row in frame)
+        print(self.term.home + output_data, end="", flush=True)
+
+    def _draw_borders(self, frame, h: int, w: int):
+        """Отрисовка сетки"""
+        # Горизонтальные линии
+        self._draw_string(frame, 0, 0, "-" * w, self.term.cyan)
+        self._draw_string(frame, 2, 0, "-" * w, self.term.cyan)
+        self._draw_string(frame, h - 4, 0, "-" * w, self.term.cyan)
+        self._draw_string(frame, h - 2, 0, "-" * w, self.term.cyan)
+
+        # Вертикальные границы
+        for r in range(h):
+            self._draw_string(frame, r, 0, "|", self.term.cyan)
+            self._draw_string(frame, r, w - 1, "|", self.term.cyan)
+
+        # Разделитель между анимацией и текстовым контентом
+        for r in range(2, h - 4):
+            self._draw_string(frame, r, cfg.ANIM_ZONE_W, "│", self.term.cyan)
+
+    def _draw_headers(self, frame):
+        """Отрисовка статичных заголовков панелей"""
         self._draw_string(frame, 1, 4, "Jarvis v0.01", self.term.bold_cyan)
         self._draw_string(frame, 3, cfg.ANIM_ZONE_W + 3, "ДИАЛОГОВЫЙ КОНТЕНТ", self.term.bold_green)
 
-        self._embed_donut(frame, h, current_time)
-
-        # 4. Выводим лог сообщений (правая часть)
+    def _draw_chat_history(self, frame, h: int, w: int):
         chat_x = cfg.ANIM_ZONE_W + 3
         chat_w = w - chat_x - 3
-        visible_msg = self.messages[-(h - 8):]
+        max_lines = h - 8
+        visible_msg = self.messages[-max_lines:]
+        
         for idx, (sender, text) in enumerate(visible_msg):
-            line = f"{sender}: {text}"[:chat_w]
-            color = self.term.green if sender == "Джарвис" else self.term.magenta
-            self._draw_string(frame, 4 + idx, chat_x, line)
-            self._draw_string(frame, 4 + idx, chat_x, f"{sender}:", color)
+            row_idx = 4 + idx
+            line = f"{sender}: {text}"[:chat_w] # Клиппинг по ширине
+            
+            self._draw_string(frame, row_idx, chat_x, line)
+            
+            # Подсветка имени отправителя
+            sender_color = self.term.green if sender == "Джарвис" else self.term.magenta
+            self._draw_string(frame, row_idx, chat_x, f"{sender}:", sender_color)
 
-        # 5. Строка статуса и буфер ввода
-        self._draw_string(frame, h - 3, 2, f" СТАТУС » {self.status} ", self.term.black_on_yellow)
-        self._draw_string(frame, h - 1, 2, f" USER@JARVIS:_> {self.input_buffer}", self.term.bold_white)
+    def _draw_input_zone(self, frame, h: int, w: int):
+        # Строка статуса
+        status_line = f" СТАТУС » {self.status} "[:w - 4]
+        self._draw_string(frame, h - 3, 2, status_line, self.term.black_on_yellow)
 
-        # Двойная буферизация: склеиваем матрицу в одну строку и отдаем в stdout за один системный вызов
-        output_data = "".join("".join(row) for row in frame)
-        print(self.term.home + output_data, end="", flush=True)
+        # Активный инпут пользователя
+        input_line = f" USER:_> {self.input_buffer}"[:w - 4]
+        self._draw_string(frame, h - 1, 2, input_line, self.term.bold_white)

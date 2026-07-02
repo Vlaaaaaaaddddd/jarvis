@@ -132,17 +132,60 @@ class TerminalUI:
         chat_x = cfg.ANIM_ZONE_W + 3
         chat_w = w - chat_x - 3
         max_lines = h - 8
-        visible_msg = self.messages[-max_lines:]
         
-        for idx, (sender, text) in enumerate(visible_msg):
+        display_lines = []  # Список кортежей вида: (sender_to_draw, text_chunk)
+
+        for sender, text in self.messages:
+            if not text:
+                continue
+                
+            # 1. Разбиваем текст по явным переносам строк (\n)
+            lines = text.splitlines()
+            if not lines and text:  # Обработка строк, состоящих только из \n
+                lines = [""]
+
+            for i, line in enumerate(lines):
+                if i == 0:
+                    # Для первой строки сообщения учитываем префикс "{sender}: "
+                    prefix_len = len(sender) + 2
+                    avail_w = chat_w - prefix_len
+                    
+                    # Кладем первый кусок вместе с именем отправителя
+                    display_lines.append((sender, line[:avail_w]))
+                    
+                    # Если остаток строки не влезает, режем его по полной ширине chat_w
+                    remaining = line[avail_w:]
+                    while remaining:
+                        display_lines.append(("", remaining[:chat_w]))
+                        remaining = remaining[chat_w:]
+                else:
+                    # Для последующих строк (после \n) режем по полной ширине chat_w.
+                    # Важно: для ASCII-арта и стихов не добавляем отступ, чтобы не плыла геометрия!
+                    if not line:
+                        display_lines.append(("", ""))
+                        continue
+                    
+                    remaining = line
+                    while remaining:
+                        display_lines.append(("", remaining[:chat_w]))
+                        remaining = remaining[chat_w:]
+
+        # 2. Оставляем только те строки, которые физически влезают в окно по высоте
+        visible_lines = display_lines[-max_lines:]
+
+        # 3. Построчно отрисовываем в матрицу кадра
+        for idx, (sender, text_chunk) in enumerate(visible_lines):
             row_idx = 4 + idx
-            line = f"{sender}: {text}"[:chat_w] # Клиппинг по ширине
             
-            self._draw_string(frame, row_idx, chat_x, line)
-            
-            # Подсветка имени отправителя
-            sender_color = self.term.green if sender == "Джарвис" else self.term.magenta
-            self._draw_string(frame, row_idx, chat_x, f"{sender}:", sender_color)
+            if sender:
+                # Подсвечиваем и рисуем имя отправителя
+                sender_color = self.term.green if sender == "Джарвис" else self.term.magenta
+                self._draw_string(frame, row_idx, chat_x, f"{sender}:", sender_color)
+                # Выводим текст сразу за именем
+                self._draw_string(frame, row_idx, chat_x + len(sender) + 2, text_chunk)
+            else:
+                # Выводим перенесенный текст или строки ASCII-арта с начала текстовой панели
+                self._draw_string(frame, row_idx, chat_x, text_chunk)
 
     def _draw_input_zone(self, frame, h: int, w: int):
         # Строка статуса

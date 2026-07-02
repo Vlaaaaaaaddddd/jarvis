@@ -8,6 +8,11 @@ class BaseTool(ABC):
         pass
 
     @abstractmethod
+    def get_schema(self) -> dict:
+        """Возвращает JSON-схему инструмента для LLM"""
+        pass
+
+    @abstractmethod
     async def execute(self): 
         pass
 

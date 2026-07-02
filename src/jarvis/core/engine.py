@@ -1,19 +1,19 @@
 import asyncio
 import time
 import jarvis.config.ui_config as cfg
-from jarvis.config import BaseLLM, BaseUI, BaseInputHandler, BaseOutputHandler
+from jarvis.config import BaseUI, BaseInputHandler, BaseOutputHandler
 
 class JarvisEngine:
     def __init__(self, 
                  ui: BaseUI,
                  input_handler: BaseInputHandler, 
                  output_handler: BaseOutputHandler, 
-                 llm: BaseLLM
+                 agent
                  ):
         self.ui = ui
         self.input_handler = input_handler
         self.output_handler = output_handler
-        self.llm = llm
+        self.agent = agent
         self._is_running = False
 
     async def start(self):
@@ -35,10 +35,10 @@ class JarvisEngine:
             if command_text:
                 if hasattr(self.ui, 'print_user_message'):
                     self.ui.print_user_message(command_text)
-                
+
                 self.ui.terminal_ui.status = "ДЖАРВИС ДУМАЕТ..."
 
-                response = await self.llm.generate_response(command_text)
+                response = await self.agent.run(command_text)
                 
                 self.ui.terminal_ui.status = "СИСТЕМА АКТИВНА"
 

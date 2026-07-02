@@ -10,7 +10,7 @@ class Gemini(BaseLLM):
         self.config = types.GenerateContentConfig(
             system_instruction=systm_prompt,
             tools=tools or [],
-            temperature=0.5, 
+            temperature=0.4, 
         )
 
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))

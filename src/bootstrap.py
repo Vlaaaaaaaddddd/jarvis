@@ -2,14 +2,17 @@ from jarvis.services.gemini import Gemini
 from jarvis.core import JarvisEngine, AgentOrchestrator
 from jarvis.front.render import JarvisUI
 from jarvis.handling import MainInputHandler, MainOutputHandler
-from jarvis.tools import TimeTool
+from jarvis.tools import TimeTool, CalendarAddEventTool, CalendarAddTaskTool, CalendarGetScheduleTool
 
 def create_app() -> JarvisEngine:
     """Фабричная функция сборки"""
     ui = JarvisUI()
 
     tools = [
-        TimeTool()
+        TimeTool(), 
+        CalendarAddEventTool(),
+        CalendarAddTaskTool(),
+        CalendarGetScheduleTool()
     ]
     tools_schemas = [tool.get_schema() for tool in tools]
 

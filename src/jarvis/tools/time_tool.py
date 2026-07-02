@@ -32,4 +32,4 @@ class TimeTool(BaseTool):
         month_ru = months[dt.month]
         weekday_ru = weekdays[dt.weekday()]
         time_str = dt.strftime("%H:%M:%S")
-        return f"{dt.day} {month_ru}, {weekday_ru}, {time_str}"
+        return f"{dt.year} год, {dt.day} {month_ru}, {weekday_ru}, {time_str}"

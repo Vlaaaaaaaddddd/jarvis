@@ -22,6 +22,8 @@ id_rsa.*
 secrets.json
 api_keys.json
 config.local.json
+credentials.json
+token.json
 
 # IDE and editor files
 .idea/

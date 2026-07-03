@@ -31,7 +31,10 @@ class MainInputHandler(BaseInputHandler):
                 try:
                     data = await loop.run_in_executor(None, self.in_stream.read, 1024, False)
                     await on_audio_callback(data)
-                except Exception:
+                except Exception as e:
+                    # Ловим падения PyAudio или коллбека
+                    with open("debug_live.log", "a", encoding="utf-8") as f:
+                        f.write(f"[MIC LOOP ERROR]: {repr(e)}\n")
                     await asyncio.sleep(0.1)
             else:
                 await asyncio.sleep(0.1)

@@ -16,6 +16,7 @@ class GeminiLiveService(BaseLiveService):
     async def start(self, on_delegate, on_text_received, on_audio_received) -> None:
         self._is_running = True
 
+
         # Конфигурируем инструмент делегирования для голосового фронтенда
         delegate_tool = types.Tool(
             function_declarations=[
@@ -46,12 +47,12 @@ class GeminiLiveService(BaseLiveService):
             try:
                 async with self.client.aio.live.connect(model=self.model_name, config=live_config) as session:
                     self._session = session
+                    
                     # Ожидаем завершения цикла получения данных
                     await self._receive_loop(on_delegate, on_text_received, on_audio_received)
             except Exception as e:
-                print('Проблемка')
                 if self._is_running:
-                    await asyncio.sleep(2) # Пауза перед реконнектом
+                    await asyncio.sleep(2) 
             finally:
                 self._session = None
 
@@ -60,14 +61,20 @@ class GeminiLiveService(BaseLiveService):
         if self._session and self._is_running:
             try:
                 await self._session.send(input=text, end_of_turn=True)
-            except Exception:
+            except Exception as e:
                 pass
 
     async def send_audio(self, audio_bytes: bytes):
-        if self._session:
-            await self._session.send(input=types.LiveClientRealtimeInput(
-                media_chunks=[types.Blob(data=audio_bytes, mime_type="audio/pcm")]
-            ))
+        if self._session and self._is_running:
+            try:
+                await self._session.send_realtime_input(
+                    audio=types.Blob(
+                        data=audio_bytes,
+                        mime_type="audio/pcm;rate=16000"
+                    )
+                )
+            except Exception as e:
+                pass
 
     async def _receive_loop(self, on_delegate, on_text_received, on_audio_received) -> None:
         try:
@@ -78,7 +85,6 @@ class GeminiLiveService(BaseLiveService):
                     if model_turn is not None:
                         for part in model_turn.parts:
                             if part.inline_data is not None:
-                                # Отдаем байты наружу в движок
                                 await on_audio_received(part.inline_data.data)
                             if part.text:
                                 await on_text_received(part.text)
@@ -90,7 +96,6 @@ class GeminiLiveService(BaseLiveService):
                             query = function_call.args.get("query")
                             try:
                                 result_text = await on_delegate(query)
-                            
                                 await self._session.send(
                                     input=types.LiveClientToolResponse(
                                         function_responses=[
@@ -103,7 +108,6 @@ class GeminiLiveService(BaseLiveService):
                                     )
                                 )
                             except Exception as e:
-                                # Если сам on_delegate упал, сообщаем об этом модели
                                 await self._session.send(
                                     input=types.LiveClientToolResponse(
                                         function_responses=[
@@ -117,6 +121,6 @@ class GeminiLiveService(BaseLiveService):
                                 )
         except Exception as e:
             pass
-
     async def stop(self) -> None:
         self._is_running = False
+        self._session = None

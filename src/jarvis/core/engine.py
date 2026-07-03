@@ -39,14 +39,14 @@ class JarvisEngine:
             )
         )
 
-        # mic_task = asyncio.create_task(
-        #     self.input_handler.microphone_loop(on_audio_callback=self.live_service.send_audio)
-        # )
+        mic_task = asyncio.create_task(
+            self.input_handler.microphone_loop(on_audio_callback=self.live_service.send_audio)
+        )
         kbd_task = asyncio.create_task(
             self.input_handler.keyboard_loop(on_text_callback=self.live_service.send_text)
         )
 
-        self._tasks = [live_task, kbd_task]
+        self._tasks = [live_task, mic_task, kbd_task]
 
         try:
             await asyncio.gather(*self._tasks)

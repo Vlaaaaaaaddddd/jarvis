@@ -2,7 +2,7 @@ import os
 from google import genai
 from google.genai import types
 
-from jarvis.config import BaseLLM, Gemini_model, systm_prompt
+from jarvis.config import BaseLLM, Gemini_model, systm_prompt, live_model_system_prompt
 
 class Gemini(BaseLLM):
     def __init__(self, tools: list = None):

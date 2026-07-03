@@ -1,4 +1,4 @@
-from jarvis.services.gemini import Gemini
+from jarvis.services import Gemini, GeminiLiveService
 from jarvis.core import JarvisEngine, AgentOrchestrator
 from jarvis.front.render import JarvisUI
 from jarvis.handling import MainInputHandler, MainOutputHandler
@@ -16,21 +16,21 @@ def create_app() -> JarvisEngine:
     ]
     tools_schemas = [tool.get_schema() for tool in tools]
 
-    llm = Gemini(tools=tools_schemas)
+    # Внутреннее ядро
+    internal_llm = Gemini(tools=tools_schemas)
+    agent = AgentOrchestrator(llm=internal_llm, tools=tools)
 
-    agent = AgentOrchestrator(llm=llm, tools=tools)
+    # Внешнее 
+    live_service = GeminiLiveService()
 
-    tts = None
-    stt = None
-
-
-    out_handler = MainOutputHandler(ui=ui, tts_service=tts)
-    in_handler = MainInputHandler(ui=ui, stt_service=stt)
+    out_handler = MainOutputHandler(ui=ui)
+    in_handler = MainInputHandler(ui=ui)
     
     # Собираем движок с внедренными зависимостями
     engine = JarvisEngine(ui=ui,
                           input_handler=in_handler, 
                           output_handler=out_handler, 
-                          agent=agent)
+                          agent=agent, 
+                          live_service=live_service)
     
     return engine

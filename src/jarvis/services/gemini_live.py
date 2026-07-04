@@ -15,8 +15,6 @@ class GeminiLiveService(BaseLiveService):
         self._is_running = False
 
         self._mute_mic_until = 0.0
-        self._chat_history = []
-        self._max_history = 15
 
     def _log(self, text: str):
         try:
@@ -24,14 +22,6 @@ class GeminiLiveService(BaseLiveService):
                 f.write(f"{text}\n")
         except Exception:
             pass
-
-    def _append_to_history(self, role: str, text: str):
-        if not text or not text.strip(): 
-            return
-        self._chat_history.append(f"{role}: {text.strip()}")
-        # Удаляем самые старые сообщения, выходящие из лимита 
-        if len(self._chat_history) > self._max_history:
-            self._chat_history.pop(0)
 
     async def start(self, on_delegate, on_text_received, on_audio_received) -> None:
         self._is_running = True
@@ -64,39 +54,31 @@ class GeminiLiveService(BaseLiveService):
             )
         )
 
-        while self._is_running:
-            try:
-                current_memory = "\n".join(self._chat_history)
-                dynamic_prompt = live_model_system_prompt
-                if current_memory:
-                    dynamic_prompt += f"\n\n[ТЕКУЩИЙ КОНТЕКСТ ДИАЛОГА]:\n{current_memory}"
-
-                live_config = types.LiveConnectConfig(
+        live_config = types.LiveConnectConfig(
                     response_modalities=["AUDIO"],
                     tools=[delegate_tool],
-                    system_instruction=types.Content(parts=[types.Part(text=dynamic_prompt)]),
+                    system_instruction=types.Content(parts=[types.Part(text=live_model_system_prompt)]),
                     speech_config=speech_config
                 )
 
-
-
+        while self._is_running:
+            try:
                 async with self.client.aio.live.connect(model=self.model_name, config=live_config) as session:
                     self._session = session
-                    self._log("[CONNECT SUCCESS]: Соединение успешно установлено!")
+                    # self._log("[CONNECT SUCCESS]: Соединение успешно установлено!")
                     self._mute_mic_until = 0.0
 
                     await self._receive_loop(on_delegate, on_text_received, on_audio_received)
             except Exception as e:
-                self._log(f"[SESSION CRASHED]: APIError или сбой сети: {repr(e)}")
+                # self._log(f"[SESSION CRASHED]: APIError или сбой сети: {repr(e)}")
                     
                 if self._is_running:
                     await asyncio.sleep(2) 
             finally:
                 self._session = None
-                self._log("[CONNECT FINALLY]: Сессия сброшена в None.")
+                # self._log("[CONNECT FINALLY]: Сессия сброшена в None.")
 
     async def send_text(self, text: str) -> None:
-        # self._append_to_history("Пользователь", text)
         if self._session and self._is_running:
             try:
                 # Затыкаем микрофон
@@ -145,6 +127,7 @@ class GeminiLiveService(BaseLiveService):
                                     await on_text_received(part.text)
                                     
                     tool_call = response.tool_call
+                    # self._log(tool_call) if tool_call else None
                     if tool_call is not None:
                         for function_call in tool_call.function_calls:
                             if function_call.name == "delegate_heavy_task":
@@ -152,6 +135,7 @@ class GeminiLiveService(BaseLiveService):
                                     query = f_call.args.get("query")
                                     try:
                                         result_text = await on_delegate(query)
+                                        # self._log(result_text)
                                         await self._session.send(
                                             input=types.LiveClientToolResponse(
                                                 function_responses=[
@@ -178,7 +162,8 @@ class GeminiLiveService(BaseLiveService):
                                 asyncio.create_task(handle_tool(function_call))
                                 
         except Exception as e:
-            self._log(f"[RECEIVE LOOP CRASHED]: {repr(e)}")
+            # self._log(f"[RECEIVE LOOP CRASHED]: {repr(e)}")
+            pass
     async def stop(self) -> None:
         self._is_running = False
         self._session = None

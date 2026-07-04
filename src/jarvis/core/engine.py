@@ -20,10 +20,15 @@ class JarvisEngine:
         self._is_running = False
         self._tasks = []
 
+        self._audio_queue = asyncio.Queue()
+        self._audio_task = None
+
     async def start(self):
         """Запуск основного цикла приложения"""
         await self.ui.start()
         self._is_running = True
+
+        self._audio_task = asyncio.create_task(self._audio_player_loop())
 
         if hasattr(self.input_handler, 'start_microphone'):
             self.input_handler.start_microphone()
@@ -55,6 +60,19 @@ class JarvisEngine:
         finally:
             self.stop()
 
+    async def _audio_player_loop(self):
+        """Асинхронный воркер, который непрерывно читает очередь и воспроизводит звук"""
+        while self._is_running:
+            try:
+                audio_bytes = await self._audio_queue.get()
+                if hasattr(self.output_handler, 'play_audio_chunk'):
+                    await self.output_handler.play_audio_chunk(audio_bytes)
+                self._audio_queue.task_done()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                pass
+
     async def _handle_delegation(self, query: str) -> str:
         """Коллбек: Внешний интерфейс просит внутренний выполнить тяжелую задачу"""
         if hasattr(self.ui, 'terminal_ui'):
@@ -74,8 +92,7 @@ class JarvisEngine:
 
     async def _handle_live_audio(self, audio_bytes: bytes) -> None:
         """Коллбек: Внешняя модель сгенерировала аудио-чанк"""
-        if hasattr(self.output_handler, 'play_audio_chunk'):
-            await self.output_handler.play_audio_chunk(audio_bytes)
+        await self._audio_queue.put(audio_bytes)
 
     def stop(self):
         if self._is_running:

@@ -2,7 +2,7 @@ import asyncio
 from datetime import datetime, timedelta, time
 from google.genai import types
 from jarvis.config import BaseTool
-from jarvis.services import GoogleCalendarService
+from jarvis.services.calendar import GoogleCalendarService
 
 calendar_infra = GoogleCalendarService()
 

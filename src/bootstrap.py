@@ -5,14 +5,23 @@ from jarvis.handling import MainInputHandler, MainOutputHandler
 from jarvis.tools import TimeTool, CalendarAddEventTool, CalendarAddTaskTool, CalendarGetScheduleTool
 from jarvis.db.database import init_db
 from jarvis.db.repository import PostgresRepository
-import asyncio
+
+import time
 
 async def create_app() -> JarvisEngine:
     """Фабричная функция сборки"""
+    current_session_id = str(int(time.time()))
+
     ui = JarvisUI()
 
     await init_db()
     memory_repo = PostgresRepository()
+
+    await memory_repo.append_session_log(
+        session_id=current_session_id, 
+        role="user", 
+        content='Сессия создана'
+    )
 
     tools = [
         TimeTool(), 
@@ -37,6 +46,8 @@ async def create_app() -> JarvisEngine:
                           input_handler=in_handler, 
                           output_handler=out_handler, 
                           agent=agent, 
-                          live_service=live_service)
+                          live_service=live_service,
+                          memory_repo=memory_repo,
+                          session_id=current_session_id)
     
     return engine

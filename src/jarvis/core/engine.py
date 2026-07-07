@@ -1,6 +1,4 @@
 import asyncio
-import time
-import jarvis.config.ui_config as cfg
 from jarvis.config import BaseUI, BaseInputHandler, BaseOutputHandler, BaseLiveService
 
 class JarvisEngine:
@@ -9,13 +7,17 @@ class JarvisEngine:
                  input_handler: BaseInputHandler, 
                  output_handler: BaseOutputHandler, 
                  agent, 
-                 live_service: BaseLiveService
+                 live_service: BaseLiveService, 
+                 memory_repo = None, 
+                 session_id = None
                  ):
         self.ui = ui
         self.input_handler = input_handler
         self.output_handler = output_handler
         self.agent = agent
         self.live_service = live_service
+        self.memory_repo = memory_repo
+        self.session_id = session_id
 
         self._is_running = False
         self._tasks = []
@@ -44,21 +46,19 @@ class JarvisEngine:
             )
         )
 
-        mic_task = asyncio.create_task(
-            self.input_handler.microphone_loop(on_audio_callback=self.live_service.send_audio)
-        )
-        kbd_task = asyncio.create_task(
-            self.input_handler.keyboard_loop(on_text_callback=self.live_service.send_text)
-        )
+        if hasattr(self.input_handler, 'microphone_loop'):
+            self._tasks.append(asyncio.create_task(
+                self.input_handler.microphone_loop(self.live_service.send_audio)
+            ))
+        
+        if hasattr(self.input_handler, 'keyboard_loop'):
+            self._tasks.append(asyncio.create_task(
+                self.input_handler.keyboard_loop(self.live_service.send_text)
+            ))
 
-        self._tasks = [live_task, mic_task, kbd_task]
-
-        try:
-            await asyncio.gather(*self._tasks)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self.stop()
+        # Держим движок активным, пока работает флаг
+        while self._is_running:
+            await asyncio.sleep(0.1)
 
     async def _audio_player_loop(self):
         """Асинхронный воркер, который непрерывно читает очередь и воспроизводит звук"""
@@ -77,8 +77,28 @@ class JarvisEngine:
         """Коллбек: Внешний интерфейс просит внутренний выполнить тяжелую задачу"""
         if hasattr(self.ui, 'terminal_ui'):
             self.ui.terminal_ui.status = "ДЖАРВИС ДУМАЕТ..."
+        
+        if self.memory_repo:
+            try:
+                await self.memory_repo.append_session_log(
+                    session_id=self.session_id, 
+                    role="user", 
+                    content=query)
+            except Exception as e:
+                with open("debug_memory.log", "a", encoding="utf-8") as f:
+                    f.write(f"[Memory Error] Не удалось записать запрос: {e}\n")
 
         response = await self.agent.run(query)
+
+        if self.memory_repo:
+            try:
+                await self.memory_repo.append_session_log(
+                    session_id=self.session_id, 
+                    role="assistant", 
+                    content=response)
+            except Exception as e:
+                with open("debug_memory.log", "a", encoding="utf-8") as f:
+                    f.write(f"[Memory Error] Не удалось записать ответ: {e}\n")
         
         if hasattr(self.ui, 'terminal_ui'):
             self.ui.terminal_ui.status = "СИСТЕМА АКТИВНА"

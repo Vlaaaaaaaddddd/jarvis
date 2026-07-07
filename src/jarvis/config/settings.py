@@ -1,3 +1,4 @@
+# ВНУТРЕННЯЯ МОДЕЛЬ (МОЗГ)
 Gemini_model = "gemini-3.1-flash-lite"
 
 systm_prompt = """
@@ -16,7 +17,7 @@ systm_prompt = """
 3. Перечисляй, что было сделано: что ты добавил, какие действия произвел, какие результаты, чтобы не было скрытых действий
 """
 
-
+# ВНЕШНЯЯ МОДЕЛЬ (ПИЗДЕЛКА)
 Gemini_live_model = "gemini-3.1-flash-live-preview"
 live_model_system_prompt = """
 Ты — голосовой фронтенд-интерфейс Джарвис (JARVIS), высокотехнологичный искусственный интеллект и личный ассистент. 
@@ -30,7 +31,22 @@ live_model_system_prompt = """
 2. Сразу после этого вызывай инструмент `delegate_heavy_task`.
 3. Когда инструмент `delegate_heavy_task` вернет тебе сухие факты от аналитического ядра, красиво и живо адаптируй их для озвучивания голосом. Убирай канцеляризмы, делай речь естественной для восприятия на слух. При необходимости сокращай слишком громоздкие массивы данных.
 """
+
+# КАЛЕНДАРЬ
 from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CALENDAR_TOKEN_FILE = BASE_DIR / 'token.json'
 CALENDAR_CREDENTIALS_FILE = BASE_DIR / 'credentials.json'
+
+
+# БДШКИ 
+import os
+from dotenv import load_dotenv
+load_dotenv()
+# Конфигурация бд 
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "jarvis_pass")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "jarvis_memory")
+DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"

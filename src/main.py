@@ -6,7 +6,7 @@ from bootstrap import create_app
 
 async def main():
     load_dotenv()
-    engine = create_app()
+    engine = await create_app()
 
     try:
         await engine.start()

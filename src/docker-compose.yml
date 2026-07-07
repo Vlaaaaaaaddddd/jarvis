@@ -1,0 +1,15 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16 
+    container_name: jarvis_postgres
+    restart: always 
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: jarvis_memory
+    ports:
+      - "5432:5432"
+    volumes:
+      - jarvis_pgdata:/var/lib/postgresql/data 
+volumes:
+  jarvis_pgdata: 

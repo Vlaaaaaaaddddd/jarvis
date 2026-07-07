@@ -73,3 +73,36 @@ class BaseOutputHandler(ABC):
     @abstractmethod
     async def broadcast(self, response_text: str) -> None:
         pass
+
+class BaseMemoryRepository(ABC):
+    # ХОЛОДНАЯ ПАМЯТЬ: Буфер сообщений, который будет анализировать агент памяти
+    @abstractmethod
+    async def append_session_log(self, session_id: str, role: str, content: str) -> None:
+        """Сохраняет реплику диалога в сырые логи базы данных"""
+        pass
+
+    @abstractmethod
+    async def get_session_logs(self, session_id: str, limit: int = 100) -> list:
+        """Возвращает историю текущей сессии для контекста"""
+        pass
+
+    # ГОРЯЧАЯ ПАМЯТЬ: Самые важные данные, которые нужно помнить постоянно
+    @abstractmethod
+    async def update_user_profile(self, key: str, value: str) -> None:
+        """Обновляет или добавляет фиксированный факт о пользователе"""
+        pass
+
+    @abstractmethod
+    async def get_user_profile(self) -> dict:
+        """Возвращает все известные жесткие факты о пользователе"""
+        pass
+
+    # ТЕПЛАЯ ПАМЯТЬ: Семантический RAG 
+    async def add_vector_memory(self, text: str, embedding: list, metadata: dict = None) -> None:
+        """Сохраняет факт и его эмбеддинг в pgvector"""
+        pass
+
+    @abstractmethod
+    async def search_vector_memory(self, query_embedding: list, limit: int = 5) -> list:
+        """Делает косинусное расстояние (или L2) по векторам и возвращает похожие факты"""
+        pass

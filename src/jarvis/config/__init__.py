@@ -7,6 +7,7 @@ __all__ = [
     'BaseTool',
     'BaseLLM',
     'BaseLiveService',
+    'BaseMemoryManager',
     'BaseUI'
     'BaseInputHandler',
     'BaseOutputHandler',

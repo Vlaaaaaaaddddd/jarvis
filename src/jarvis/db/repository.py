@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, update, delete
 from jarvis.config import BaseMemoryRepository
 from jarvis.db.database import async_session_maker
 from jarvis.db.models import UserProfile, VectorMemory, SessionLog
@@ -69,3 +69,44 @@ class PostgresRepository(BaseMemoryRepository):
             result = await session.execute(stmt)
             memories = result.scalars().all()
             return [{"text": m.text, "metadata": m.meta_data} for m in memories]
+        
+    # МЕТОДЫ АГЕНТА ПАМЯТИ 
+    async def get_unprocessed_facts(self) -> list:
+        """
+        Выбирает из session_log все важные необработанные факты
+        """
+        async with async_session_maker() as session:
+            stmt = (
+                select(SessionLog)
+                .where(SessionLog.role == "fact", SessionLog.processed == False)
+                .order_by(SessionLog.timestamp.asc()) # Обрабатываем в хронологическом порядке
+            )
+            result = await session.execute(stmt)
+            logs = result.scalars().all()
+            # Возвращаем список словарей, чтобы изолировать Агента от ORM-моделей
+            return [{"id": log.id, "content": log.content} for log in logs]
+
+    async def mark_facts_as_processed(self, log_ids: list) -> None:
+        """
+        Помечает пачку записей как обработанные
+        """
+        if not log_ids:
+            return
+        async with async_session_maker() as session:
+            async with session.begin():
+                stmt = (
+                    update(SessionLog)
+                    .where(SessionLog.id.in_(log_ids))
+                    .values(processed=True)
+                )
+                await session.execute(stmt)
+
+    async def delete_user_profile_key(self, key: str) -> None:
+        """
+        Удаляет ключ из горячей памяти
+        Нужно, если Агент поймет, что какой-то факт о пользователе стал неактуален
+        """
+        async with async_session_maker() as session:
+            async with session.begin():
+                stmt = delete(UserProfile).where(UserProfile.key == key)
+                await session.execute(stmt)

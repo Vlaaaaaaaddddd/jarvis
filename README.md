@@ -1,6 +1,6 @@
 # 🤖 J.A.R.V.I.S. — Just A Rather Very Intelligent System
 
-**Версия:** 0.3.0  
+**Версия:** 0.4.0  
 **Статус:** Активная разработка  
 **Python:** 3.13.14+  
 **LLM:** Google Gemini 3.1 Flash Lite + Flash Live Preview  
@@ -20,6 +20,7 @@ c:\other\Codes\jarvis\
 ├── .git/                          # Git репозиторий
 ├── .gitignore                     # Игнорирование чувствительных файлов
 ├── .python-version                # Версия Python
+├── docker-compose.yml             # 🐳 Конфигурация PostgreSQL + pgvector
 ├── pyproject.toml                 # Конфигурация проекта
 ├── uv.lock                        # Список зависимостей (uv)
 ├── README.md                      # Документация
@@ -33,6 +34,7 @@ c:\other\Codes\jarvis\
 src/
 ├── main.py                        # 🎯 Точка входа
 ├── bootstrap.py                   # 🔧 Фабрика сборки зависимостей
+├── docker-compose.yml             # 🐳 Конфигурация PostgreSQL + pgvector
 └── jarvis/                        # 📦 Основная библиотека
     ├── __init__.py
     ├── config/                    # ⚙️ Конфигурация и абстракции
@@ -172,12 +174,13 @@ JARVIS использует **трёхуровневую архитектуру 
 ### `interfaces.py` — Абстрактные базовые классы
 
 ```python
-BaseTool                # База для инструментов (name, get_schema, execute)
 BaseLLM                 # Интерфейс LLM (generate_response)
 BaseLiveService         # Интерфейс Live API (start, send_audio, send_text)
-BaseUI                  # Интерфейс UI (start, render_frame, stop)
-BaseInputHandler        # Обработка ввода (microphone_loop, keyboard_loop)
-BaseOutputHandler       # Обработка вывода (broadcast, play_audio_chunk)
+BaseMemoryManager       # Интерфейс менеджера памяти
+BaseTool                # База для инструментов (name, get_schema, execute)
+BaseUI                  # Интерфейс UI (start, stop, set_status, print_message, ...)
+BaseInputHandler        # Обработка ввода (start, microphone_loop, keyboard_loop, stop)
+BaseOutputHandler       # Обработка вывода (start, broadcast, play_audio_chunk, stop)
 BaseMemoryRepository    # Интерфейс долговременной памяти
 ```
 
@@ -238,7 +241,6 @@ BaseMemoryRepository    # Интерфейс долговременной пам
 - LLM для обработки естественных запросов
 - Function Calling для вызова внешних инструментов
 - Системный промпт с инструкциями по стилю общения ("сэр", краткость, уважительность)
-- Инструкция по использованию `memorize_important_fact` для сохранения фактов
 
 **Голосовой фронтенд (Gemini 3.1 Flash Live Preview):**
 - Real-time голосовой диалог
@@ -266,6 +268,11 @@ BaseMemoryRepository    # Интерфейс долговременной пам
 - Векторное сходство через косинусное расстояние
 - Индексация для быстрого поиска по векторам
 
+**Обработка фактов:**
+- Жесткая привязка к сессии (session_id)
+- Три типа записей: `user`, `assistant`, `fact`
+- Автоматическая фиксация через `memorize_important_fact` инструмент
+
 ### 5. **Инструменты (Tools)**
 
 | Инструмент | Описание |
@@ -275,7 +282,7 @@ BaseMemoryRepository    # Интерфейс долговременной пам
 | `CalendarAddTaskTool` | Создание To-Do задач в Google Tasks |
 | `CalendarGetScheduleTool` | Просмотр расписания по календарям и задачам |
 | `DelegateHeavyTaskTool` | Делегирование сложных задач внутреннему агенту |
-| `MemorizeFactTool` | Сохранение важных фактов в горячую память |
+| `MemorizeFactTool` | Сохранение важных фактов в холодную память (SessionLog) |
 
 ### 6. **Google Calendar Integration**
 - Аутентификация через OAuth2 (автоматическое обновление токенов)
@@ -292,6 +299,9 @@ BaseMemoryRepository    # Интерфейс долговременной пам
 ## 📊 Эволюция разработки (git log)
 
 ```
+12fc379  Багфикс
+a8e1803  Рефакторинг движка
+fd8b546  Инструмент сохранения в холодную память для внешнего агента
 250ff69  Подключил бд
 187972c  Создание БД
 d427b71  Рефакторинг, багфикс
@@ -350,6 +360,26 @@ uv run src/main.py
    DB_PORT=5432
    DB_NAME=jarvis_memory
    ```
+4. **Docker (альтернативный способ):**
+   ```bash
+   cd src
+   docker-compose up -d
+   ```
+
+### Базовая архитектура памяти
+
+**Поток сохранения данных:**
+1. **Горячая память** — через `memorize_important_fact` инструмент
+   - Вызывается голосовым агентом при получении важных фактов
+   - Сохраняется в таблицу `user_profile` (ключ-значение)
+   
+2. **Холодная память** — автоматически через движок
+   - Каждое сообщение (user/assistant) сохраняется в `session_log`
+   - Используется для построения контекста текущей сессии
+
+3. **Теплая память** — в будущем через RAG
+   - Планируется автоматическая векторизация важных фактов
+   - Поиск похожих контекстов через cosine distance
 
 ---
 
@@ -378,6 +408,7 @@ dotenv>=0.9.9                 # Загрузка переменных окруж
 - Требуется Python 3.13+
 - Для корректной работы рекомендуется развертывание терминала на 120×30 символов
 - База данных PostgreSQL с pgvector обязательна для работы системы долговременной памяти
+- Docker Compose конфигурация доступна в `src/docker-compose.yml`
 
 ---
 
@@ -387,4 +418,4 @@ dotenv>=0.9.9                 # Загрузка переменных окруж
 
 ---
 
-*Джарвис — это уважительный, слегка ироничный, уверенный и лаконичный ИИ-ассистент, работающий локально на компьютере своего создателя. Версия 0.3.0 добавляет трёхуровневую систему долговременной памяти на базе PostgreSQL с pgvector для семантического поиска.*
+*Джарвис — это уважительный, слегка ироничный, уверенный и лаконичный ИИ-ассистент, работающий локально на компьютере своего создателя. Версия 0.4.0 добавляет полную трёхуровневую систему долговременной памяти на базе PostgreSQL с pgvector, рефакторинг движка и улучшенную архитектуру UI.*

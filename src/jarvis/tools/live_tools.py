@@ -63,3 +63,23 @@ class MemorizeFactTool:
 
     async def execute(self, fact: str) -> str:
         return await self.on_memorize(fact)
+    
+class ForceConsolidationTool(BaseTool):
+    def __init__(self, on_force_callback):
+        self.on_force = on_force_callback
+    @property
+    def name(self) -> str:
+        return "force_memory_consolidation"
+    
+    def get_schema(self) -> types.Tool:
+        return types.Tool(
+            function_declarations=[
+                types.FunctionDeclaration(
+                    name=self.name,
+                    description="Используй этот инструмент ТОЛЬКО, если пользователь говорит, что отходит на какое-тоо время, или прямо просит запустить анализ, очистку или структурирование памяти, когда можно запустить внутреннего Агента Памяти",
+                )
+            ]
+        )
+    
+    async def execute(self, **kwargs):
+        return await self.on_force()

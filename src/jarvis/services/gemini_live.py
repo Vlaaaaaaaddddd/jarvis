@@ -6,7 +6,7 @@ from google import genai
 from google.genai import types
 
 from jarvis.config import BaseLiveService, live_model_system_prompt, Gemini_live_model
-from jarvis.tools.live_tools import DelegateHeavyTaskTool, MemorizeFactTool
+from jarvis.tools.live_tools import DelegateHeavyTaskTool, MemorizeFactTool, ForceConsolidationTool
 
 class GeminiLiveService(BaseLiveService):
     def __init__(self):
@@ -19,14 +19,26 @@ class GeminiLiveService(BaseLiveService):
 
         self._tools_map = {}
 
-    async def start(self, on_delegate, on_memorize, on_text_received, on_audio_received) -> None:
+    async def start(
+            self, 
+            on_delegate, 
+            on_memorize, 
+            on_force_consolidation, 
+            on_audio_received,
+            system_prompt: str = None
+            ) -> None:
+        
         self._is_running = True
+
+        current_prompt = system_prompt or live_model_system_prompt
 
         live_tool = DelegateHeavyTaskTool(on_delegate)
         memory_tool = MemorizeFactTool(on_memorize)
+        force_tool = ForceConsolidationTool(on_force_consolidation)
         self._tools_map = {
             live_tool.name: live_tool, 
-            memory_tool.name: memory_tool
+            memory_tool.name: memory_tool, 
+            force_tool.name: force_tool
             }
 
         speech_config = types.SpeechConfig(
@@ -40,7 +52,9 @@ class GeminiLiveService(BaseLiveService):
         live_config = types.LiveConnectConfig(
                     response_modalities=["AUDIO"],
                     tools=[tool.get_schema() for tool in self._tools_map.values()],
-                    system_instruction=types.Content(parts=[types.Part(text=live_model_system_prompt)]),
+                    system_instruction=types.Content(
+                        parts=[types.Part.from_text(text=current_prompt)]
+                    ),
                     speech_config=speech_config
                 )
 
@@ -49,7 +63,7 @@ class GeminiLiveService(BaseLiveService):
                 async with self.client.aio.live.connect(model=self.model_name, config=live_config) as session:
                     self._session = session
                     self._mute_mic_until = 0.0
-                    await self._receive_loop(on_text_received, on_audio_received)
+                    await self._receive_loop(on_audio_received)
             except Exception:
                 if self._is_running:
                     await asyncio.sleep(2) 
@@ -80,7 +94,7 @@ class GeminiLiveService(BaseLiveService):
             except Exception:
                 pass
 
-    async def _receive_loop(self, on_text_received, on_audio_received) -> None:
+    async def _receive_loop(self, on_audio_received) -> None:
         try:
             while self._is_running:
                 async for response in self._session.receive():
@@ -90,8 +104,6 @@ class GeminiLiveService(BaseLiveService):
                         for part in response.server_content.model_turn.parts:
                             if part.inline_data:
                                 await on_audio_received(part.inline_data.data)
-                            if part.text:
-                                await on_text_received(part.text)
                                 
                     # Обработка вызовов инструментов 
                     if response.tool_call:

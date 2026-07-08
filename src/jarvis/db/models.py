@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean
 from sqlalchemy.sql import func
 from pgvector.sqlalchemy import Vector
 from jarvis.db.database import Base
@@ -27,6 +27,7 @@ class SessionLog(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(String, index=True, nullable=False)
-    role = Column(String, nullable=False) # user, assistant или system
+    role = Column(String, nullable=False) # в основном fact
     content = Column(Text, nullable=False)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    processed = Column(Boolean, default=False, index=True)

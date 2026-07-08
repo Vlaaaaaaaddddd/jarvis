@@ -1,5 +1,5 @@
-from jarvis.services import Gemini, GeminiLiveService
-from jarvis.core import JarvisEngine, AgentOrchestrator
+from jarvis.services import Gemini, GeminiLiveService, MemoryLLMService
+from jarvis.core import JarvisEngine, AgentOrchestrator, MemoryAgent
 from jarvis.front.render import JarvisUI
 from jarvis.handling import MainInputHandler, MainOutputHandler
 from jarvis.tools import TimeTool, CalendarAddEventTool, CalendarAddTaskTool, CalendarGetScheduleTool
@@ -14,8 +14,6 @@ async def create_app() -> JarvisEngine:
 
     ui = JarvisUI()
 
-    await init_db()
-    memory_repo = PostgresRepository()
     tools = [
         TimeTool(), 
         CalendarAddEventTool(),
@@ -31,6 +29,12 @@ async def create_app() -> JarvisEngine:
     # Внешнее 
     live_service = GeminiLiveService()
 
+    # Память 
+    await init_db()
+    memory_repo = PostgresRepository()
+    memory_llm_service = MemoryLLMService()
+    memory_agent = MemoryAgent(repository=memory_repo, llm_service=memory_llm_service)
+
     out_handler = MainOutputHandler(ui=ui)
     in_handler = MainInputHandler(ui=ui)
     
@@ -41,6 +45,7 @@ async def create_app() -> JarvisEngine:
                           agent=agent, 
                           live_service=live_service,
                           memory_repo=memory_repo,
+                          memory_agent=memory_agent,
                           session_id=current_session_id)
     
     return engine

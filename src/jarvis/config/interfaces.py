@@ -31,6 +31,12 @@ class BaseLiveService(ABC):
     async def stop(self) -> None:
         pass
 
+class BaseMemoryManager(ABC):
+    @abstractmethod
+    async def analyze_facts(self, facts_payload: str, system_instruction: str) -> str:
+        """Отправляет факты на анализ и гарантированно возвращает JSON-строку"""
+        pass
+
 class BaseTool(ABC): 
     @property
     @abstractmethod
@@ -137,4 +143,27 @@ class BaseMemoryRepository(ABC):
     @abstractmethod
     async def search_vector_memory(self, query_embedding: list, limit: int = 5) -> list:
         """Делает косинусное расстояние (или L2) по векторам и возвращает похожие факты"""
+        pass
+
+    # МЕТОДЫ АГЕНТА ПАМЯТИ 
+    @abstractmethod
+    async def get_unprocessed_facts(self) -> list:
+        """
+        Выбирает из session_log все важные необработанные факты
+        """
+        pass
+
+    @abstractmethod
+    async def mark_facts_as_processed(self, log_ids: list) -> None:
+        """
+        Помечает пачку записей как обработанные
+        """
+        pass
+
+    @abstractmethod
+    async def delete_user_profile_key(self, key: str) -> None:
+        """
+        Удаляет ключ из горячей памяти
+        Нужно, если Агент поймет, что какой-то факт о пользователе стал неактуален
+        """
         pass

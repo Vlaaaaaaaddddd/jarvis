@@ -41,6 +41,7 @@ class JarvisEngine:
         live_task = asyncio.create_task(
             self.live_service.start(
                 on_delegate=self._handle_delegation,
+                on_memorize=self._handle_memorizing,
                 on_text_received=self._handle_live_text,
                 on_audio_received=self._handle_live_audio
             )
@@ -96,14 +97,36 @@ class JarvisEngine:
                     session_id=self.session_id, 
                     role="assistant", 
                     content=response)
-            except Exception as e:
-                with open("debug_memory.log", "a", encoding="utf-8") as f:
-                    f.write(f"[Memory Error] Не удалось записать ответ: {e}\n")
+            except Exception:
+                pass
         
         if hasattr(self.ui, 'terminal_ui'):
             self.ui.terminal_ui.status = "СИСТЕМА АКТИВНА"
             
         return response
+    
+    async def _handle_memorizing(self, fact: str):
+        """Обработка запоминания факта в памяти"""
+        if hasattr(self.ui, 'terminal_ui'):
+            self.ui.terminal_ui.status = "Сохранил в память"
+        if self.memory_repo:
+            try:
+                await self.memory_repo.append_session_log(
+                    session_id=self.session_id, 
+                    role="fact", 
+                    content=fact
+                )
+                if hasattr(self.ui, 'terminal_ui'):
+                    self.ui.terminal_ui.status = "СИСТЕМА АКТИВНА"
+                return f"Успешно зафиксировано в памяти сессии факт: '{fact}'"
+            except Exception as e:
+                if hasattr(self.ui, 'terminal_ui'):
+                    self.ui.terminal_ui.status = "СИСТЕМА АКТИВНА"
+                return f"Ошибка при записи факта в репозиторий: {str(e)}"
+        
+        
+        
+        return "Репозиторий памяти не инициализирован в движке."
 
     async def _handle_live_text(self, text: str) -> None:
         """Коллбек: Внешняя модель сгенерировала текстовый транскрипт ответа"""

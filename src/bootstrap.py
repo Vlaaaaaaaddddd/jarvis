@@ -16,13 +16,6 @@ async def create_app() -> JarvisEngine:
 
     await init_db()
     memory_repo = PostgresRepository()
-
-    await memory_repo.append_session_log(
-        session_id=current_session_id, 
-        role="user", 
-        content='Сессия создана'
-    )
-
     tools = [
         TimeTool(), 
         CalendarAddEventTool(),

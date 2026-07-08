@@ -53,6 +53,10 @@ class BaseUI(ABC):
         pass
 
     @abstractmethod
+    def set_status(self, status: str) -> None: 
+        pass
+
+    @abstractmethod
     def render_frame(self, current_time: float) -> None:
         pass
 
@@ -62,6 +66,10 @@ class BaseUI(ABC):
 
 class BaseInputHandler(ABC):
     @abstractmethod
+    def start(self) -> None:
+        pass
+
+    @abstractmethod
     async def microphone_loop(self, on_audio_callback):
         pass
 
@@ -69,9 +77,25 @@ class BaseInputHandler(ABC):
     async def keyboard_loop(self, on_text_callback):
         pass
 
+    @abstractmethod 
+    def stop(self) -> None:
+        pass
+
 class BaseOutputHandler(ABC):
     @abstractmethod
+    def start(self) -> None:
+        pass
+
+    @abstractmethod
     async def broadcast(self, response_text: str) -> None:
+        pass
+
+    @abstractmethod
+    async def play_audio_chunk(self, audio_bytes: bytes) -> None:
+        pass
+
+    @abstractmethod 
+    def stop(self) -> None:
         pass
 
 class BaseMemoryRepository(ABC):

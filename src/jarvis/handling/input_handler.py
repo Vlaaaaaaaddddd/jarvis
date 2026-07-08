@@ -6,7 +6,6 @@ from jarvis.config import BaseInputHandler
 class MainInputHandler(BaseInputHandler):
     def __init__(self, ui):
         self.ui = ui
-        self.cli_mode = os.getenv("CLI_MODE", "False") == "True"
         self._running = False
         
         # Настройки микрофона под Live API

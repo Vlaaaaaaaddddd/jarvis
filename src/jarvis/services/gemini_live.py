@@ -6,7 +6,7 @@ from google import genai
 from google.genai import types
 
 from jarvis.config import BaseLiveService, live_model_system_prompt, Gemini_live_model
-from jarvis.tools.live_tools import DelegateHeavyTaskTool
+from jarvis.tools.live_tools import DelegateHeavyTaskTool, MemorizeFactTool
 
 class GeminiLiveService(BaseLiveService):
     def __init__(self):
@@ -19,11 +19,15 @@ class GeminiLiveService(BaseLiveService):
 
         self._tools_map = {}
 
-    async def start(self, on_delegate, on_text_received, on_audio_received) -> None:
+    async def start(self, on_delegate, on_memorize, on_text_received, on_audio_received) -> None:
         self._is_running = True
 
         live_tool = DelegateHeavyTaskTool(on_delegate)
-        self._tools_map = {live_tool.name: live_tool}
+        memory_tool = MemorizeFactTool(on_memorize)
+        self._tools_map = {
+            live_tool.name: live_tool, 
+            memory_tool.name: memory_tool
+            }
 
         speech_config = types.SpeechConfig(
             voice_config=types.VoiceConfig(
@@ -35,7 +39,7 @@ class GeminiLiveService(BaseLiveService):
 
         live_config = types.LiveConnectConfig(
                     response_modalities=["AUDIO"],
-                    tools=[live_tool.get_schema()],
+                    tools=[tool.get_schema() for tool in self._tools_map.values()],
                     system_instruction=types.Content(parts=[types.Part(text=live_model_system_prompt)]),
                     speech_config=speech_config
                 )

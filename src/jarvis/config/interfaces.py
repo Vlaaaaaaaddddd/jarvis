@@ -49,19 +49,27 @@ class BaseTool(ABC):
 
 class BaseUI(ABC):
     @abstractmethod
-    def start(self) -> None:
-        pass
-
-    @abstractmethod
-    def set_status(self, status: str) -> None: 
-        pass
-
-    @abstractmethod
-    def render_frame(self, current_time: float) -> None:
+    async def start(self) -> None:
         pass
 
     @abstractmethod
     def stop(self) -> None:
+        pass
+
+    @abstractmethod
+    def set_status(self, status: str) -> None:
+        pass
+
+    @abstractmethod
+    def print_message(self, text: str) -> None:
+        pass
+
+    @abstractmethod
+    def print_user_message(self, text: str) -> None:
+        pass
+
+    @abstractmethod
+    def update_input_buffer(self, text: str) -> None:
         pass
 
 class BaseInputHandler(ABC):

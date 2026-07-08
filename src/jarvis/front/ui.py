@@ -28,16 +28,36 @@ class TerminalUI:
         self.styled_ramp = np.array(styled_list, dtype=object)
 
     def start(self):
-        """Вход в полноэкранный режим"""
         self._cbreak_ctx = self.term.cbreak()
         self._cbreak_ctx.__enter__()
         print(self.term.enter_fullscreen + self.term.hide_cursor + self.term.clear)
 
     def stop(self):
-        """Выход из полноэкранного режима """
         print(self.term.exit_fullscreen + self.term.normal_cursor)
         if self._cbreak_ctx:
             self._cbreak_ctx.__exit__(None, None, None)
+
+    def add_message(self, sender: str, text: str):
+        self.messages.append((sender, text))
+
+    def render_frame(self, current_time: float):
+        """Сборка кадра"""
+        h, w = self.term.height, self.term.width
+        if h < cfg.MIN_H or w < cfg.MIN_W:
+            print(self.term.home + "Расширьте окно терминала...", end="", flush=True)
+            return
+
+        # Инициализируем пустую текстовую матрицу кадра
+        frame = np.full((h, w), " ", dtype=object)
+        self._draw_borders(frame, h, w)
+        self._draw_headers(frame)
+        self._embed_donut(frame, h, current_time)      # математическая сфера
+        self._draw_chat_history(frame, h, w)           # Правая часть (вывод ответов)
+        self._draw_input_zone(frame, h, w)
+
+        frame[h - 1, w - 1] = "" 
+        output_data = "".join("".join(row) for row in frame)
+        print(self.term.home + output_data, end="", flush=True)
 
     def _draw_string(self, matrix, row, col, text, color_func=None):
         """Прямая безопасная запись строки в двумерную матрицу кадра"""
@@ -86,25 +106,7 @@ class TerminalUI:
         # Записываем все тысячи точек в матрицу кадра без циклов
         matrix[y, x] = chars_to_draw
 
-    def render_frame(self, current_time: float):
-        """Сборка кадра"""
-        h, w = self.term.height, self.term.width
-        if h < cfg.MIN_H or w < cfg.MIN_W:
-            print(self.term.home + "Расширьте окно терминала...", end="", flush=True)
-            return
-
-        # Инициализируем пустую текстовую матрицу кадра
-        frame = np.full((h, w), " ", dtype=object)
-
-        self._draw_borders(frame, h, w)
-        self._draw_headers(frame)
-        self._embed_donut(frame, h, current_time)      # Твоя математическая сфера
-        self._draw_chat_history(frame, h, w)           # Правая часть (вывод ответов)
-        self._draw_input_zone(frame, h, w)
-
-        frame[h - 1, w - 1] = "" 
-        output_data = "".join("".join(row) for row in frame)
-        print(self.term.home + output_data, end="", flush=True)
+    
 
     def _draw_borders(self, frame, h: int, w: int):
         """Отрисовка сетки"""

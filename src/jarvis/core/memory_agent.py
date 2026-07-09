@@ -4,6 +4,7 @@ import os
 from jarvis.config import MEMORY_AGENT_PROMPT
 from jarvis.db.repository import PostgresRepository
 from jarvis.services.memory_llm import MemoryLLMService 
+from jarvis.services.embeddings import EmbeddingService
 
 
 logger = logging.getLogger("jarvis.memory_agent")
@@ -19,9 +20,15 @@ if not logger.handlers:
     logger.addHandler(file_handler)
 
 class MemoryAgent:
-    def __init__(self, repository: PostgresRepository, llm_service: MemoryLLMService):
+    def __init__(
+            self, 
+            repository: PostgresRepository, 
+            llm_service: MemoryLLMService, 
+            embedding_service: EmbeddingService
+            ):
         self.repo = repository
         self.llm = llm_service
+        self.embedding_service = embedding_service
         logger.info("Агент Памяти успешно инициализирован. Логирование запущено в logs/memory_agent.log")
 
     async def consolidate(self) -> None:
@@ -58,9 +65,20 @@ class MemoryAgent:
                 await self.repo.update_user_profile(key, str(value))
                 logger.debug(f"Обновлен профиль: {key} -> {value}")
 
-            for warm_text in actions.get("warm_additions", []):
-                await self.repo.add_vector_memory(text=warm_text, embedding=None)
-                logger.debug(f"Добавлено в теплую память: {warm_text[:30]}...")
+            warm_texts = actions.get("warm_additions", [])
+            if warm_texts:
+                embeddings = await self.embedding_service.get_embeddings_batch(warm_texts)
+                
+                if embeddings and len(embeddings) == len(warm_texts):
+                    # Собираем объекты для БД
+                    items_to_save = [
+                        {"text": text, "embedding": emb, "metadata": None}
+                        for text, emb in zip(warm_texts, embeddings)
+                    ]
+                    await self.repo.add_vector_memory_batch(items_to_save)
+                    logger.debug(f"Добавлено в теплую память {len(items_to_save)} векторизованных фактов.")
+                else:
+                    logger.error("Ошибка векторизации: количество текстов и векторов не совпадает.")
 
             # Закрываем транзакцию
             processed_ids = [f["id"] for f in unprocessed]

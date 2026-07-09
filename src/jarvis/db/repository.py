@@ -58,6 +58,26 @@ class PostgresRepository(BaseMemoryRepository):
                 memory_entry = VectorMemory(text=text, embedding=embedding, meta_data=metadata)
                 session.add(memory_entry)
 
+    async def add_vector_memory_batch(self, items: list[dict]) -> None:
+        """
+        Пакетное сохранение
+        Ожидает список словарей: [{"text": str, "embedding": list[float], "metadata": dict}]
+        """
+        if not items:
+            return
+            
+        async with async_session_maker() as session:
+            async with session.begin():
+                memory_entries = [
+                    VectorMemory(
+                        text=item["text"],
+                        embedding=item["embedding"],
+                        meta_data=item.get("metadata")
+                    )
+                    for item in items
+                ]
+                session.add_all(memory_entries)
+
     async def search_vector_memory(self, query_embedding: list, limit: int = 5) -> list:
         """Делает косинусное расстояние (или L2) по векторам и возвращает похожие факты"""
         async with async_session_maker() as session:

@@ -36,7 +36,7 @@ class CalendarAddEventTool(BaseTool):
                         type=types.Type.OBJECT,
                         properties={
                             "summary": types.Schema(type=types.Type.STRING, description="Название события"),
-                            "start_time": types.Schema(type=types.Type.STRING, description="Строгая дата и время начала в формате ISO 8601 (YYYY-MM-DDTHH:MM:SS). ВНИМАНИЕ: Сначала вызови TimeTool, чтобы узнать текущий год/месяц/день, и на их основе вычисли точный ISO-таймстемп"),
+                            "start_time": types.Schema(type=types.Type.STRING, description="СТРОГО ДАТА И ВРЕМЯ В ПОЛНОМ ФОРМАТЕ ISO 8601 (YYYY-MM-DDTHH:MM:SS). ВНИМАНИЕ: Сначала вызови TimeTool, чтобы узнать текущий год/месяц/день, и на их основе вычисли точный ISO-таймстемп"),
                             "is_all_day": types.Schema(type=types.Type.BOOLEAN, description="True, если событие запланировано на весь день (без конкретных часов)"),
                             "category": types.Schema(type=types.Type.STRING, description="Категория дела для выбора календаря: 'университет', 'учеба дома', 'работа, проекты', 'хорошие привычки', 'спорт', 'встречи', 'быт'"),
                             "duration_minutes": types.Schema(type=types.Type.INTEGER, description="Длительность обычного события в минутах (по умолчанию 60)"),
@@ -158,7 +158,7 @@ class CalendarGetScheduleTool(BaseTool):
         base_start = parse_relative_date(start_time)
         base_end = parse_relative_date(end_time)
         
-        if start_time == "today" and end_time == "today":
+        if start_time == end_time:
             time_min = datetime.combine(base_start.date(), time.min).isoformat() + 'Z'
             time_max = datetime.combine(base_end.date(), time.max).isoformat() + 'Z'
         else:

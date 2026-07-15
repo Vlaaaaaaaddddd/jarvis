@@ -1,11 +1,14 @@
 from jarvis.services import Gemini, GeminiLiveService, MemoryLLMService, EmbeddingService
-from jarvis.core import JarvisEngine, AgentOrchestrator, MemoryAgent
+from jarvis.core import JarvisEngine, TaskGraph, MemoryAgent
 from jarvis.front.render import JarvisUI
 from jarvis.handling import MainInputHandler, MainOutputHandler
-from jarvis.tools import (
-    TimeTool, 
-    CalendarAddEventTool, CalendarAddTaskTool, CalendarGetScheduleTool,
-    SearchMemoryTool)
+from jarvis.tools.time_tool import time_tool
+from jarvis.tools.calendar_tools import (
+    calendar_add_event_tool, 
+    calendar_add_task_tool, 
+    calendar_get_schedule_tool
+)
+from jarvis.tools.memory_tools import create_search_memory_tool
 from jarvis.db.database import init_db
 from jarvis.db.repository import PostgresRepository
 
@@ -32,17 +35,16 @@ async def create_app() -> JarvisEngine:
         embedding_service=embedding_service)
 
     tools = [
-        TimeTool(), 
-        CalendarAddEventTool(),
-        CalendarAddTaskTool(),
-        CalendarGetScheduleTool(), 
-        SearchMemoryTool(repository=memory_repo, embedding_service=embedding_service)
+        time_tool, 
+        calendar_add_event_tool,
+        calendar_add_task_tool,
+        calendar_get_schedule_tool, 
+        create_search_memory_tool(repository=memory_repo, embedding_service=embedding_service)
     ]
-    tools_schemas = [tool.get_schema() for tool in tools]
 
     # Внутреннее ядро
-    internal_llm = Gemini(tools=tools_schemas)
-    agent = AgentOrchestrator(llm=internal_llm, tools=tools)
+    internal_llm = Gemini(tools=tools)
+    task_graph = TaskGraph(llm=internal_llm, tools=tools)
     
     # Внешнее 
     live_service = GeminiLiveService()
@@ -51,7 +53,7 @@ async def create_app() -> JarvisEngine:
     engine = JarvisEngine(ui=ui,
                           input_handler=in_handler, 
                           output_handler=out_handler, 
-                          agent=agent, 
+                          task_graph=task_graph,
                           live_service=live_service,
                           memory_repo=memory_repo,
                           memory_agent=memory_agent,

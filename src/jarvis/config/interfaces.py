@@ -2,8 +2,11 @@ from abc import ABC, abstractmethod
 
 class BaseLLM(ABC): 
     @abstractmethod
-    async def generate_response(self, prompt: str) -> str:
-        """Принимает текст от пользователя, возвращает ответ от LLM"""
+    async def generate_stateless(self, messages: list):
+        """
+        Основной stateless-метод для LangGraph.
+        Принимает текущее состояние истории, отправляет в API и возвращает AIMessage.
+        """
         pass
 
 class BaseLiveService(ABC):

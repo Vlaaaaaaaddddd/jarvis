@@ -1,13 +1,14 @@
 import asyncio
 import time
 from jarvis.config import BaseUI, BaseInputHandler, BaseOutputHandler, BaseLiveService, live_model_system_prompt
+from jarvis.core.graph import TaskGraph
 
 class JarvisEngine:
     def __init__(self, 
                  ui: BaseUI,
                  input_handler: BaseInputHandler, 
                  output_handler: BaseOutputHandler, 
-                 agent, 
+                 task_graph: TaskGraph,
                  live_service: BaseLiveService, 
                  memory_repo = None, 
                  memory_agent = None,
@@ -16,7 +17,7 @@ class JarvisEngine:
         self.ui = ui
         self.input_handler = input_handler
         self.output_handler = output_handler
-        self.agent = agent
+        self.task_graph = task_graph
         self.live_service = live_service
         self.memory_repo = memory_repo
         self.memory_agent = memory_agent
@@ -102,7 +103,7 @@ class JarvisEngine:
         self.ui.set_status("ДЖАРВИС ДУМАЕТ...")
         self._wake_up()
         try:
-            response = await self.agent.run(query)
+            response = await self.task_graph.run(query)
             return response
         except Exception as e:
             return f"Внутренняя ошибка агента при обработке: {str(e)}"

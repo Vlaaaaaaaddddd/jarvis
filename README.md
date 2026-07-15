@@ -1,12 +1,13 @@
 # 🤖 J.A.R.V.I.S. — Just A Rather Very Intelligent System
 
-**Версия:** 0.5.0  
+**Версия:** 0.6.0  
 **Статус:** Активная разработка  
 **Python:** 3.13.14+  
 **LLM:** Google Gemini 3.1 Flash Lite + Flash Live Preview  
+**Embeddings:** Gemini Embedding 2 (768-dim)  
 **База данных:** PostgreSQL 15+ с расширением pgvector  
 **Агент памяти:** Gemini 3.1 Flash Lite (отдельный экземпляр)  
-
+**RAG:** Векторный поиск по долговременной памяти
 ---
 
 ## 📐 Полная архитектура проекта
@@ -26,10 +27,7 @@ c:\other\Codes\jarvis\
 ├── uv.lock                        # Список зависимостей (uv)
 ├── README.md                      # Документация
 ├── run.bat                        # Скрипт запуска (Windows)
-└── src/                           # Исходный код
-```
-
-### 📁 Дерево исходного кода `src/`
+└── src/                  ### 📁 Дерево исходного кода `src/`
 
 ```
 src/
@@ -61,12 +59,14 @@ src/
     │   ├── gemini.py              # 🤖 Gemini (LLM API)
     │   ├── gemini_live.py         # 🎤 GeminiLiveService (Live API с аудио)
     │   ├── calendar.py            # 📆 GoogleCalendarService (календари + задачи)
-    │   └── memory_llm.py          # 🧠 MemoryLLMService (отдельный LLM для анализа памяти)
+    │   ├── memory_llm.py          # 🧠 MemoryLLMService (отдельный LLM для анализа памяти)
+    │   └── embeddings.py          # 🧬 EmbeddingService (Gemini Embedding 2 для RAG)
     ├── tools/                     # 🛠️ Инструменты агента
     │   ├── __init__.py
     │   ├── time_tool.py           # ⏰ TimeTool (текущая дата/время)
     │   ├── calendar_tools.py      # 📅 Инструменты календаря (3 шт.)
-    │   └── live_tools.py          # 🎤 Инструменты голосового интерфейса (3 шт.)
+    │   ├── live_tools.py          # 🎤 Инструменты голосового интерфейса (3 шт.)
+    │   └── memory_tools.py        # 🧠 SearchMemoryTool (RAG-поиск по памяти)
     ├── front/                     # 🖥️ Пользовательский интерфейс
     │   ├── render.py              # 🎬 JarvisUI (отрисовка кадров)
     │   └── ui.py                  # 🖼️ TerminalUI (ASCII-арта, чат, ввод)
@@ -78,6 +78,7 @@ src/
         ├── models.py              # 🗃️ Модели данных (UserProfile, VectorMemory, SessionLog)
         └── repository.py          # 📚 Репозиторий (холодная/горячая/теплая память + агент)
 ```
+теплая память + агент)\r\n```"}
 
 ---
 

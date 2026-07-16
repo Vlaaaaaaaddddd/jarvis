@@ -15,18 +15,21 @@ class DelegateHeavyTaskTool(BaseTool):
                 types.FunctionDeclaration(
                     name=self.name,
                     description=(
-                        "Делегировать сложную системную задачу (работа с календарем, расписанием, памятью) внутреннему агенту. "
-                        "ВАЖНО: Если внутренний агент возвращает сообщение с текстом '[СИСТЕМНЫЙ СТАТУС]: Требуется подтверждение', "
-                        "ты ОБЯЗАН озвучить предложенный им черновик пользователю голосом, спросить его подтверждение или правки, "
-                        "и получив ответ от пользователя, СНОВА вызвать этот инструмент (delegate_heavy_task), "
-                        "передав ответ пользователя в параметр query для завершения планирования. Не принимай решения за пользователя самостоятельно."
+                        "Делегировать сложную системную задачу внутреннему агенту. "
+                        "ВАЖНО: Если внутренний агент возвращает '[СИСТЕМНЫЙ СТАТУС]: Требуется подтверждение', "
+                        "озвучь черновик, спроси мнение пользователя, и СНОВА вызови этот инструмент, "
+                        "передав его ответ в query и выставив правильный approval_status."
                     ),
                     parameters=types.Schema(
                         type="OBJECT",
                         properties={
                             "query": types.Schema(
                                 type="STRING", 
-                                description="Оригинальный текстовый запрос пользователя ИЛИ его вербальный ответ/правки к черновику плана."
+                                description="Запрос пользователя или его ответ на черновик."
+                            ),
+                            "approval_status": types.Schema(
+                                type="STRING",
+                                description="Только при ответе на черновик. Варианты: 'approved' (согласен), 'rejected' (отмена), 'revised' (просит изменить)."
                             )
                         },
                         required=["query"]
@@ -35,9 +38,8 @@ class DelegateHeavyTaskTool(BaseTool):
             ]
         )
 
-    async def execute(self, query: str) -> str:
-        return await self._callback(query)
-    
+    async def execute(self, query: str, approval_status: str = None) -> str:
+        return await self._callback(query, approval_status=approval_status)
 
 class MemorizeFactTool:
     def __init__(self, on_memorize_callback):

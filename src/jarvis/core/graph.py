@@ -25,6 +25,8 @@ class TaskGraph:
         workflow.add_node("tools", self._tools_node)
         workflow.add_node("emergency_stop", self._emergency_node)
         workflow.add_node("human_approval", self._human_approval_node)
+        workflow.add_node("commit_node", self._commit_node)  
+        workflow.add_node("abort_node", self._abort_node)    
 
         workflow.add_edge("human_approval", "agent")
 
@@ -43,11 +45,20 @@ class TaskGraph:
             }
         )
 
-        # Настраиваем безусловные переходы
-        workflow.add_edge("tools", "agent")          # После инструментов всегда возвращаемся к LLM
-
+        workflow.add_edge("tools", "agent")
         workflow.add_edge("emergency_stop", END)
-        workflow.add_edge("human_approval", "agent") # Переход обратно к агенту после апрува
+        workflow.add_edge("commit_node", END)
+        workflow.add_edge("abort_node", END)
+
+        workflow.add_conditional_edges(
+            "human_approval",
+            self._after_approval,
+            {
+                "commit": "commit_node",
+                "abort": "abort_node",
+                "revise": "agent"
+            }
+        )
 
         return workflow.compile(
             checkpointer=self.memory,
@@ -63,10 +74,23 @@ class TaskGraph:
         self.logger.info(f"LLM Response: {response.content}")
         if response.tool_calls:
             self.logger.info(f"LLM requested tools: {[tc['name'] for tc in response.tool_calls]}")
-        
-        # Возвращаем новые данные для State. LangGraph сам приклеит response к списку messages
-        return {"messages": [response], "steps_count": state.get("steps_count", 0) + 1}
 
+        update_data = {
+            "messages": [response], 
+            "steps_count": state.get("steps_count", 0) + 1
+        }
+        
+        if getattr(response, "tool_calls", None):
+            self.logger.info(f"LLM requested tools: {[tc['name'] for tc in response.tool_calls]}")
+            for tc in response.tool_calls:
+                if tc["name"] == "request_user_approval_tool":
+                    args = tc["args"]
+                    update_data["draft_plan"] = args.get("draft_plan")
+                    update_data["draft_events"] = args.get("draft_events", [])
+                    update_data["draft_tasks"] = args.get("draft_tasks", [])
+        
+        return update_data
+    
     async def _tools_node(self, state: TaskState) -> Dict[str, Any]:
         last_message = state["messages"][-1]
         tasks = []
@@ -102,29 +126,52 @@ class TaskGraph:
         
         if tool_call_id:
             if user_approval is True:
-                content = "[СИСТЕМА]: Статус согласования: ОДОБРЕНО. Пользователь подтвердил черновик. ТЕПЕРЬ ОБЯЗАТЕЛЬНО вызови инструменты записи (CalendarAddEventTool / CalendarAddTaskTool), чтобы сохранить этот план в календарь."
+                content = "[СИСТЕМА]: Статус: ОДОБРЕНО. План передан на автоматическую запись."
             elif user_approval is False:
-                content = "[СИСТЕМА]: Статус согласования: ОТКЛОНЕНО. Отмени выполнение задачи и вежливо сообщи пользователю, что ничего записывать не стал."
+                content = "[СИСТЕМА]: Статус: ОТКЛОНЕНО. Отмени выполнение задачи и сообщи пользователю."
             elif user_feedback:
-                content = f"[СИСТЕМА]: Статус согласования: ПРАВКИ. Пользователь просит изменить черновик: '{user_feedback}'. Сделай новую версию с учетом правок и снова вызови инструмент апрува."
+                content = f"[СИСТЕМА]: Статус: ПРАВКИ. Пользователь просит изменить черновик: '{user_feedback}'. Сделай новую версию и снова вызови апрув."
             else:
                 content = "[СИСТЕМА]: Статус неизвестен."
 
-            # Отправляем только одно сообщение — ответ инструмента, но с мощным контекстом
             new_messages.append(
-                ToolMessage(
-                    content=content,
-                    name="request_user_approval_tool",
-                    tool_call_id=tool_call_id
-                )
+                ToolMessage(content=content, name="request_user_approval_tool", tool_call_id=tool_call_id)
             )
 
         return {"messages": new_messages}
 
     async def _commit_node(self, state: TaskState) -> Dict[str, Any]:
-        """Здесь будут вызываться реальные API записи в календарь. Пока заглушка"""
-        msg = AIMessage(content="План успешно применен и записан в календарь")
+        """Выполняет реальную запись в календарь на чистом Python без LLM."""
+        events = state.get("draft_events") or []
+        tasks = state.get("draft_tasks") or []
+        
+        # Извлекаем функции из твоих инструментов
+        add_event_tool = self.tools.get("calendar_add_event_tool")
+        add_task_tool = self.tools.get("calendar_add_task_tool")
+        
+        for ev in events:
+            self.logger.info(f"Авто-запись события: {ev}")
+            if add_event_tool:
+                await add_event_tool.ainvoke(ev)
+            await asyncio.sleep(0.5)
+            
+        for task in tasks:
+            self.logger.info(f"Авто-запись задачи: {task}")
+            if add_task_tool:
+                await add_task_tool.ainvoke(task)
+            await asyncio.sleep(0.5)
+            
+        # Формируем финальный ответ от ллм
+        msg = AIMessage(content="Отлично, я внес все события и задачи в твой календарь.")
         return {"messages": [msg], "is_completed": True}
+    
+    async def _abort_node(self, state: TaskState) -> Dict[str, Any]:
+        return {
+            "messages": [AIMessage(content="Пользователь отменил план. Запись не произведена.")], 
+            "is_completed": True,
+            "draft_events": [],
+            "draft_tasks": []
+        }
 
     # ВСПОМОГАТЕЛЬНАЯ ЛОГИКА 
 
@@ -176,54 +223,54 @@ class TaskGraph:
 
     # ТОЧКА ВХОДА 
 
-    async def run(self, query: str, thread_id: str = "default_thread") -> str:
+    async def run(self, query: str, approval_status: str = None, thread_id: str = "default_thread") -> str:
         config = {"configurable": {"thread_id": thread_id}}
         
         # Проверяем, не висит ли граф на паузе в этом потоке
         current_state = self.graph.get_state(config)
         
         if current_state and current_state.next:
-            # ГРАФ БЫЛ НА ПАУЗЕ. Значит - это ответ пользователя (да/нет/правки)
-            user_input = query.lower()
-            
-            # Примитивный парсер ответа. Потом можно подключить LLM для классификации
-            if "да" in user_input or "согласен" in user_input or "отлично" in user_input:
+            # ИСПОЛЬЗУЕМ СТАТУС ОТ ВНЕШНЕГО АГЕНТА ВМЕСТО РЕГУЛЯРОК
+            if approval_status == "approved":
                 update_data = {"user_approval": True, "user_feedback": None}
-            elif "отмени" in user_input or "нет" in user_input and len(user_input) < 15:
+            elif approval_status == "rejected":
                 update_data = {"user_approval": False, "user_feedback": None}
-            else:
+            elif approval_status == "revised":
                 update_data = {"user_approval": None, "user_feedback": query}
+            else:
+                # Надежный фолбек, если статус не передан
+                user_input = query.lower()
+                if any(w in user_input for w in ["да", "согласен", "отлично", "записывай"]):
+                    update_data = {"user_approval": True}
+                else:
+                    update_data = {"user_approval": None, "user_feedback": query}
                 
-            # Обновляем стейт и продолжаем с того же места
             self.graph.update_state(config, update_data)
             final_state = await self.graph.ainvoke(None, config)
-        
         else:
-            # ЭТО НОВЫЙ ЗАПРОС
             initial_state = {
                 "messages": [HumanMessage(content=query)],
                 "task_objective": query,
                 "steps_count": 0,
-                "is_completed": True,
+                "is_completed": False,
                 "draft_plan": None,
+                "draft_events": [],
+                "draft_tasks": [],
                 "user_approval": None,
                 "user_feedback": None
             }
             final_state = await self.graph.ainvoke(initial_state, config)
 
-        # Если граф остановился на паузе 
         checkpoint = self.graph.get_state(config)
         if checkpoint.next:
             last_message = final_state["messages"][-1]
             content = last_message.content
             
-            # Если LLM забыла сгенерировать текст, достаем черновик из аргументов инструмента
             if not content and getattr(last_message, "tool_calls", None):
                 approval_call = next((tc for tc in last_message.tool_calls if tc["name"] == "request_user_approval_tool"), None)
                 if approval_call:
                     content = f"Я подготовил черновик:\n{approval_call['args'].get('draft_plan', '')}"
             
-            # Возвращаем черновик с критически важным маркером для Live-модели
             return f"{content}\n\n[СИСТЕМНЫЙ СТАТУС]: Требуется подтверждение. Озвучь черновик."
 
         return final_state["messages"][-1].content

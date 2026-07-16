@@ -24,5 +24,9 @@ class TaskState(TypedDict):
     # True - одобрено, False - откат, None - ожидание    
     user_approval: bool | None
 
+    # Структурированные списки для автоматического коммита на Python
+    draft_events: list[dict] | None
+    draft_tasks: list[dict] | None
+
     # Текстовые правки от пользователя
     user_feedback: str | None        

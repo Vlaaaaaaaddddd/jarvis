@@ -98,12 +98,12 @@ class JarvisEngine:
                     self.is_consolidating = True
                     self.consolidation_task = asyncio.create_task(self._run_consolidation())
 
-    async def _handle_delegation(self, query: str) -> str:
+    async def _handle_delegation(self, query: str, approval_status: str = None) -> str:
         """Коллбек: Внешний интерфейс просит внутренний выполнить тяжелую задачу"""
         self.ui.set_status("ДЖАРВИС ДУМАЕТ...")
         self._wake_up()
         try:
-            response = await self.task_graph.run(query, thread_id=self.session_id)
+            response = await self.task_graph.run(query, approval_status=approval_status, thread_id=self.session_id)
             return response
         except Exception as e:
             return f"Внутренняя ошибка агента при обработке: {str(e)}"

@@ -1,13 +1,15 @@
 # 🤖 J.A.R.V.I.S. — Just A Rather Very Intelligent System
 
-**Версия:** 0.6.0  
+**Версия:** 0.7.0  
 **Статус:** Активная разработка  
-**Python:** 3.13.14+  
+**Python:** 3.13+  
 **LLM:** Google Gemini 3.1 Flash Lite + Flash Live Preview  
 **Embeddings:** Gemini Embedding 2 (768-dim)  
 **База данных:** PostgreSQL 15+ с расширением pgvector  
 **Агент памяти:** Gemini 3.1 Flash Lite (отдельный экземпляр)  
+**Orchestration:** LangGraph StateGraph  
 **RAG:** Векторный поиск по долговременной памяти
+
 ---
 
 ## 📐 Полная архитектура проекта
@@ -22,67 +24,58 @@ c:\other\Codes\jarvis\
 ├── .git/                          # Git репозиторий
 ├── .gitignore                     # Игнорирование чувствительных файлов
 ├── .python-version                # Версия Python
-├── docker-compose.yml             # 🐳 Конфигурация PostgreSQL + pgvector
 ├── pyproject.toml                 # Конфигурация проекта
 ├── uv.lock                        # Список зависимостей (uv)
 ├── README.md                      # Документация
 ├── run.bat                        # Скрипт запуска (Windows)
-└── src/                  ### 📁 Дерево исходного кода `src/`
-
-```
-src/
-├── main.py                        # 🎯 Точка входа
-├── bootstrap.py                   # 🔧 Фабрика сборки зависимостей
-├── docker-compose.yml             # 🐳 Конфигурация PostgreSQL + pgvector
-└── jarvis/                        # 📦 Основная библиотека
-    ├── __init__.py
-    ├── config/                    # ⚙️ Конфигурация и абстракции
-    │   ├── __init__.py
-    │   ├── constants.py           # 📅 Русифицированные месяцы/дни
-    │   ├── interfaces.py          # 📋 Абстрактные базовые классы
-    │   ├── settings.py            # ⚙️ Настройки LLM, БД, промптов и путей
-    │   └── ui_config.py           # 🎨 Конфигурация UI (FPS, размеры)
-    ├── core/                      # 🧠 Ядро системы
-    │   ├── __init__.py
-    │   ├── agent.py               # 🧠 AgentOrchestrator (управление LLM + инструментами)
-    │   ├── engine.py              # ⚙️ JarvisEngine (основной цикл + консолидация памяти)
-    │   ├── graph.py               # 📜 Граф обработки (заглушка)
-    │   ├── routing.py             # 🛣️ Маршрутизация (заглушка)
-    │   ├── state.py               # 📊 Состояние (заглушка)
-    │   └── memory_agent.py        # 🧠 MemoryAgent (автономный анализатор памяти)
-    ├── handling/                  # 📤 Ввод и вывод
-    │   ├── __init__.py
-    │   ├── input_handler.py       # 🎹 MainInputHandler (микрофон + клавиатура)
-    │   └── output_handler.py      # 📢 MainOutputHandler (вывод на экран + аудио)
-    ├── services/                  # 🌐 Внешние сервисы
-    │   ├── __init__.py
-    │   ├── gemini.py              # 🤖 Gemini (LLM API)
-    │   ├── gemini_live.py         # 🎤 GeminiLiveService (Live API с аудио)
-    │   ├── calendar.py            # 📆 GoogleCalendarService (календари + задачи)
-    │   ├── memory_llm.py          # 🧠 MemoryLLMService (отдельный LLM для анализа памяти)
-    │   └── embeddings.py          # 🧬 EmbeddingService (Gemini Embedding 2 для RAG)
-    ├── tools/                     # 🛠️ Инструменты агента
-    │   ├── __init__.py
-    │   ├── time_tool.py           # ⏰ TimeTool (текущая дата/время)
-    │   ├── calendar_tools.py      # 📅 Инструменты календаря (3 шт.)
-    │   ├── live_tools.py          # 🎤 Инструменты голосового интерфейса (3 шт.)
-    │   └── memory_tools.py        # 🧠 SearchMemoryTool (RAG-поиск по памяти)
-    ├── front/                     # 🖥️ Пользовательский интерфейс
-    │   ├── render.py              # 🎬 JarvisUI (отрисовка кадров)
-    │   └── ui.py                  # 🖼️ TerminalUI (ASCII-арта, чат, ввод)
-    ├── utils/                     # 🔧 Утилиты
-    │   └── math_3d.py             # 📐 Математика для 3D-анимации
-    └── db/                        # 🗄️ Система долговременной памяти
+└── src/                           # 📁 Дерево исходного кода
+    ├── main.py                    # 🎯 Точка входа
+    ├── bootstrap.py               # 🔧 Фабрика сборки зависимостей
+    └── jarvis/                    # 📦 Основная библиотека
         ├── __init__.py
-        ├── database.py            # 🔌 Асинхронная поддержка БД + pgvector
-        ├── models.py              # 🗃️ Модели данных (UserProfile, VectorMemory, SessionLog)
-        └── repository.py          # 📚 Репозиторий (холодная/горячая/теплая память + агент)
+        ├── config/                # ⚙️ Конфигурация и абстракции
+        │   ├── __init__.py
+        │   ├── constants.py       # 📅 Русифицированные месяцы/дни
+        │   ├── interfaces.py      # 📋 Абстрактные базовые классы
+        │   ├── settings.py        # ⚙️ Настройки LLM, БД, промптов и путей
+        │   └── ui_config.py       # 🎨 Конфигурация UI (FPS, размеры)
+        ├── core/                  # 🧠 Ядро системы
+        │   ├── __init__.py
+        │   ├── engine.py          # ⚙️ JarvisEngine (основной цикл + консолидация памяти)
+        │   ├── graph.py           # 📜 Граф обработки (LangGraph StateGraph)
+        │   ├── state.py           # 📊 Состояние для графа (TaskState)
+        │   ├── routing.py         # 🛣️ Маршрутизация (заглушка)
+        │   └── memory_agent.py    # 🧠 MemoryAgent (автономный анализатор памяти)
+        ├── handling/              # 📤 Ввод и вывод
+        │   ├── __init__.py
+        │   ├── input_handler.py   # 🎹 MainInputHandler (микрофон + клавиатура)
+        │   └── output_handler.py  # 📢 MainOutputHandler (вывод на экран + аудио)
+        ├── services/              # 🌐 Внешние сервисы
+        │   ├── __init__.py
+        │   ├── gemini.py          # 🤖 Gemini (LLM API)
+        │   ├── gemini_live.py     # 🎤 GeminiLiveService (Live API с аудио)
+        │   ├── calendar.py        # 📆 GoogleCalendarService (календари + задачи)
+        │   ├── memory_llm.py      # 🧠 MemoryLLMService (отдельный LLM для анализа памяти)
+        │   └── embeddings.py      # 🧬 EmbeddingService (Gemini Embedding 2 для RAG)
+        ├── tools/                 # 🛠️ Инструменты агента
+        │   ├── __init__.py
+        │   ├── time_tool.py       # ⏰ TimeTool (текущая дата/время)
+        │   ├── calendar_tools.py  # 📅 Инструменты календаря (3 шт.)
+        │   ├── live_tools.py      # 🎤 Инструменты голосового интерфейса (3 шт.)
+        │   └── memory_tools.py    # 🧠 SearchMemoryTool (RAG-поиск по памяти)
+        ├── front/                 # 🖥️ Пользовательский интерфейс
+        │   ├── render.py          # 🎬 JarvisUI (отрисовка кадров)
+        │   └── ui.py              # 🖼️ TerminalUI (ASCII-арта, чат, ввод)
+        ├── utils/                 # 🔧 Утилиты
+        │   └── math_3d.py         # 📐 Математика для 3D-анимации
+        └── db/                    # 🗄️ Система долговременной памяти
+            ├── __init__.py
+            ├── database.py        # 🔌 Асинхронная поддержка БД + pgvector
+            ├── models.py          # 🗃️ Модели данных (UserProfile, VectorMemory, SessionLog)
+            └── repository.py      # 📚 Репозиторий (холодная/теплая/горячая память + агент)
 ```
-теплая память + агент)\r\n```"}
 
----
-
-## 🧠 Взаимодействие компонентов
+### 🧠 Взаимодействие компонентов
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -97,8 +90,8 @@ src/
 │  │  (Front)    │  │  (Tools)    │  │  (Internal) │  │  (Memory)    │    │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └──────────────┘    │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌──────────────┐    │
-│  │ InputHandler│  │ OutputHandler│ │ Agent       │  │ MemoryAgent  │    │
-│  │ (Mic + Kbd) │  │ (Screen +   │  │ (Orchestrator)│ (Анализ памяти)│    │
+│  │ InputHandler│  │ OutputHandler│ │ TaskGraph   │  │ MemoryAgent  │    │
+│  │ (Mic + Kbd) │  │ (Screen +   │  │ (LangGraph) │  │ (Анализ памяти)│    │
 │  │             │  │  Audio)     │  │             │  └──────────────┘    │
 │  └─────────────┘  └─────────────┘  └─────────────┘                       │
 │  ┌─────────────┐  ┌─────────────┐                                       │
@@ -124,6 +117,12 @@ src/
 - Автоматически через 2 минуты бездействия
 - По команде пользователя (`force_memory_consolidation`)
 - Анализирует необработанные факты из `session_log` и распределяет их по уровням памяти
+
+**Граф Обработки (TaskGraph)** — построенный с помощью LangGraph StateGraph:
+- agent — вызов LLM для анализа запроса
+- tools — выполнение запрошенных инструментов
+- emergency_stop — аварийная остановка при превышении лимита шагов (8)
+- Условные переходы определяют поток выполнения на основе наличия tool_calls
 ```
 
 ---
@@ -197,14 +196,14 @@ BaseMemoryRepository    # Интерфейс долговременной пам
 
 ### `settings.py` — Настройки
 
-**Внутренний агент:**
+**Внутренний агент (Gemini 3.1 Flash Lite):**
 - **Модель:** `gemini-3.1-flash-lite`
-- **Промпт:** Системный инструктаж агента ("сэр", краткость, уважительность)
+- **Промпт:** Системный инструктаж агента (бэк-офис, точность, без вежливости)
 
-**Голосовой фронтенд:**
+**Голосовой фронтенд (Gemini 3.1 Flash Live Preview):**
 - **Модель:** `gemini-3.1-flash-live-preview`
 - **Промпт:** Инструкция для голосового интерфейса с делегированием
-- **Инструменты:** `delegate_heavy_task`, `memorize_important_fact`
+- **Инструменты:** `delegate_heavy_task`, `memorize_important_fact`, `force_memory_consolidation`
 
 **База данных:**
 - **СУБД:** PostgreSQL 15+ с расширением pgvector
@@ -217,7 +216,7 @@ BaseMemoryRepository    # Интерфейс долговременной пам
 
 - `RENDER_INTERVAL = 33` (~30 FPS)
 - `ANIM_ZONE_W = 46` (ширина зоны анимации)
-- `MIN_W = 120`, `MIN_H = 30` (минимальный размер терминала для run.bat)
+- `MIN_W = 120`, `MIN_H = 30` (минимальный размер терминала)
 - `SHADING_RAMP = " .*:!?#$@"` (ASCII-символы для теней)
 - `ROT_SPEED_X = 2`, `ROT_SPEED_Y = 1` (скорость вращения тора)
 - `R1 = 1.0`, `R2 = 2.0` (параметры тора)
@@ -252,7 +251,7 @@ BaseMemoryRepository    # Интерфейс долговременной пам
 **Внутренний агент (Gemini 3.1 Flash Lite):**
 - LLM для обработки естественных запросов
 - Function Calling для вызова внешних инструментов
-- Системный промпт с инструкциями по стилю общения ("сэр", краткость, уважительность)
+- Системный промпт с инструкциями по стилю общения (без вежливости, только факты)
 
 **Голосовой фронтенд (Gemini 3.1 Flash Live Preview):**
 - Real-time голосовой диалог
@@ -303,16 +302,24 @@ BaseMemoryRepository    # Интерфейс долговременной пам
 | `CalendarGetScheduleTool` | Просмотр расписания по календарям и задачам |
 | `DelegateHeavyTaskTool` | Делегирование сложных задач внутреннему агенту |
 | `MemorizeFactTool` | Сохранение важных фактов в холодную память (SessionLog) |
+| `ForceConsolidationTool` | Принудительный запуск агента памяти |
+| `SearchMemoryTool` | RAG-поиск по долговременной памяти (взаимодействие с `search_user_memory`) |
 
 ### 6. **Google Calendar Integration**
 - Аутентификация через OAuth2 (автоматическое обновление токенов)
 - 7 календарей: университет, учеба дома, работа, привычки, спорт, встречи, быт
 - Поддержка событий и задач с фильтрацией по времени
 
-### 7. **Конфигурация**
-- `constants.py` — русифицированные месяцы и дни недели
-- `settings.py` — системный промпт, модели, пути к токенам, настройки БД
-- `ui_config.py` — настройки UI (FPS, размер зон, ASCII-шрифт)
+### 7. **LangGraph StateGraph**
+- Граф обработки с узлами: `agent`, `tools`, `emergency_stop`
+- Условные переходы на основе наличия `tool_calls`
+- Жесткий лимит шагов (8 итераций) для предотвращения зацикливания
+- Автоматическая маршрутизация между LLM и инструментами
+
+### 8. **Динамическая генерация промптов**
+- Движок компилирует системный промпт с учетом горячей памяти
+- Актуальные факты подставляются в промпт перед каждым запросом
+- Гарантирует, что голосовой интерфейс всегда имеет актуальный контекст
 
 ---
 
@@ -349,9 +356,9 @@ e2af7d6  Remove .env from repository
 
 | Файл | Назначение | Статус |
 |------|------------|--------|
-| `core/graph.py` | Граф обработки (LangGraph/StateGraph) | Пустой |
-| `core/state.py` | Управление состоянием диалога | Пустой |
-| `core/routing.py` | Маршрутизация запросов | Пустой |
+| `core/graph.py` | Граф обработки (LangGraph/StateGraph) | ✅ Реализован |
+| `core/state.py` | Управление состоянием диалога | ✅ Реализован |
+| `core/routing.py` | Маршрутизация запросов | 🟡 Заглушка |
 
 ---
 
@@ -373,7 +380,7 @@ uv run src/main.py
    CREATE EXTENSION vector;
    ```
 3. **Переменные окружения в `.env`:**
-   ```
+   ```env
    GEMINI_API_KEY=your_api_key
    DB_USER=postgres
    DB_PASSWORD=jarvis_pass
@@ -412,17 +419,19 @@ uv run src/main.py
 
 ## 📦 Зависимости
 
-```
-asyncpg>=0.31.0               # Асинхронный PostgreSQL
-google-genai>=2.10.0          # Gemini API (внутренний + Live)
+```toml
+asyncpg>=0.31.0                    # Асинхронный PostgreSQL
+google-genai>=2.10.0               # Gemini API (внутренний + Live)
 google-api-python-client>=2.198.0  # Google Calendar/Tasks
-google-auth-oauthlib>=1.4.0   # OAuth2
-blessed>=1.45.0               # Терминальный UI
-numpy>=2.5.0                  # Математика для 3D-анимации
-pgvector>=0.5.0               # Векторное расширение PostgreSQL
-pyaudio>=0.2.14               # Аудио (микрофон + динамики)
-sqlalchemy>=2.0.51            # ORM для БД
-dotenv>=0.9.9                 # Загрузка переменных окружения
+google-auth-oauthlib>=1.4.0        # OAuth2
+blessed>=1.45.0                    # Терминальный UI
+numpy>=2.5.0                       # Математика для 3D-анимации
+pgvector>=0.5.0                    # Векторное расширение PostgreSQL
+pyaudio>=0.2.14                    # Аудио (микрофон + динамики)
+sqlalchemy>=2.0.51                 # ORM для БД
+langchain-google-genai>=4.2.7      # LangChain интеграция с Gemini
+langgraph>=1.2.9                   # Граф обработки StateGraph
+python-dotenv>=0.9.9               # Загрузка переменных окружения
 ```
 
 ---
@@ -445,4 +454,4 @@ dotenv>=0.9.9                 # Загрузка переменных окруж
 
 ---
 
-*Джарвис — это уважительный, слегка ироничный, уверенный и лаконичный ИИ-ассистент, работающий локально на компьютере своего создателя. Версия 0.5.0 добавляет автономный агент памяти для автоматической консолидации фактов, отдельный LLM-сервис для анализа и улучшенную архитектуру долговременной памяти.*
+*Джарвис — это уважительный, слегка ироничный, уверенный и лаконичный ИИ-ассистент, работающий локально на компьютере своего создателя. Версия 0.7.0 добавляет интеграцию LangGraph для построения StateGraph, улучшенную систему долговременной памяти с автономным агентом консолидации и голосовой интерфейс через Gemini Live API.*

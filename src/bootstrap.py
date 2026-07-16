@@ -8,6 +8,7 @@ from jarvis.tools.calendar_tools import (
     calendar_add_task_tool, 
     calendar_get_schedule_tool
 )
+from jarvis.tools.approval_tool import request_user_approval_tool
 from jarvis.tools.memory_tools import create_search_memory_tool
 from jarvis.db.database import init_db
 from jarvis.db.repository import PostgresRepository
@@ -39,7 +40,8 @@ async def create_app() -> JarvisEngine:
         calendar_add_event_tool,
         calendar_add_task_tool,
         calendar_get_schedule_tool, 
-        create_search_memory_tool(repository=memory_repo, embedding_service=embedding_service)
+        create_search_memory_tool(repository=memory_repo, embedding_service=embedding_service),
+        request_user_approval_tool
     ]
 
     # Внутреннее ядро

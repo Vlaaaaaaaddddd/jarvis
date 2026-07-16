@@ -103,7 +103,7 @@ class JarvisEngine:
         self.ui.set_status("ДЖАРВИС ДУМАЕТ...")
         self._wake_up()
         try:
-            response = await self.task_graph.run(query)
+            response = await self.task_graph.run(query, thread_id=self.session_id)
             return response
         except Exception as e:
             return f"Внутренняя ошибка агента при обработке: {str(e)}"

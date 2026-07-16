@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, time
 from langchain_core.tools import tool
 from jarvis.services.calendar import GoogleCalendarService
 
+calendar_semaphore = asyncio.Semaphore(2) # максимум 1 одновременный запрос
 calendar_infra = GoogleCalendarService()
 
 def parse_relative_date(date_str: str) -> datetime:
@@ -52,10 +53,15 @@ async def calendar_add_event_tool(
         result = calendar_infra.calendar_service.events().insert(calendarId=cal_id, body=event).execute()
         return f"Мероприятие '{summary}' успешно добавлено в календарь '{category}'. Ссылка: {result.get('htmlLink')}"
 
-    try:
-        return await asyncio.to_thread(_run)
-    except Exception as e:
-        return f"Ошибка создания события: {str(e)}"
+    # Используем семафор, чтобы запросы шли строго друг за другом, не перегружая прокси
+    async with calendar_semaphore:
+        try:
+            res = await asyncio.to_thread(_run)
+            # Микро-пауза в 0.5 секунды между запросами для стабилизации TLS соединения
+            await asyncio.sleep(0.5)
+            return res
+        except Exception as e:
+            return f"Ошибка создания события: {str(e)}"
 
 @tool
 async def calendar_add_task_tool(title: str, due_date: str = None, notes: str = "") -> str:

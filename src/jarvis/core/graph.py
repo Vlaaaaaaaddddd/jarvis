@@ -1,7 +1,8 @@
 import asyncio
 from typing import Dict, Any, Literal
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
+from langchain_core.messages import ToolMessage, AIMessage, HumanMessage, SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.tools import BaseTool
 from jarvis.core.state import TaskState
 from jarvis.config import BaseLLM
@@ -11,6 +12,7 @@ class TaskGraph:
     def __init__(self, llm: BaseLLM, tools: list[BaseTool]):
         self.llm = llm
         self.tools = {tool.name: tool for tool in tools} 
+        self.memory = MemorySaver() 
         self.graph = self._build_graph()
         self.logger = get_logger("TaskGraph")
 
@@ -22,22 +24,35 @@ class TaskGraph:
         workflow.add_node("agent", self._agent_node)
         workflow.add_node("tools", self._tools_node)
         workflow.add_node("emergency_stop", self._emergency_node)
+        workflow.add_node("human_approval", self._human_approval_node)
+
+        workflow.add_edge("human_approval", "agent")
 
         # Указываем, с какого узла граф начинает работу
         workflow.set_entry_point("agent")
 
         # Настраиваем условные переходы (Edges) от узла "agent"
         workflow.add_conditional_edges(
-            "agent", self._should_continue,
-            {"continue": "tools", "end": END, "emergency": "emergency_stop"}
+            "agent",
+            self._should_continue,
+            {
+                "continue": "tools", 
+                "end": END, 
+                "emergency": "emergency_stop",
+                "approval": "human_approval"
+            }
         )
 
         # Настраиваем безусловные переходы
         workflow.add_edge("tools", "agent")          # После инструментов всегда возвращаемся к LLM
-        workflow.add_edge("emergency_stop", END)     # После ошибки всегда завершаем работу
 
-        # Компилируем граф в исполняемый объект
-        return workflow.compile()
+        workflow.add_edge("emergency_stop", END)
+        workflow.add_edge("human_approval", "agent") # Переход обратно к агенту после апрува
+
+        return workflow.compile(
+            checkpointer=self.memory,
+            interrupt_before=["human_approval"]
+        )
 
     # УЗЛЫ (NODES) 
 
@@ -69,6 +84,47 @@ class TaskGraph:
         """Узел, который отрабатывает, если мы застряли в цикле"""
         msg = AIMessage(content="[СИСТЕМНОЕ СООБЩЕНИЕ] Выполнение прервано: превышен лимит шагов.")
         return {"messages": [msg], "is_completed": False}
+    
+    async def _human_approval_node(self, state: TaskState) -> Dict[str, Any]:
+        user_approval = state.get("user_approval")
+        user_feedback = state.get("user_feedback")
+        messages = list(state.get("messages", []))
+        
+        last_ai_msg = messages[-1]
+        tool_call_id = None
+        if getattr(last_ai_msg, "tool_calls", None):
+            for tc in last_ai_msg.tool_calls:
+                if tc["name"] == "request_user_approval_tool":
+                    tool_call_id = tc["id"]
+                    break
+
+        new_messages = []
+        
+        if tool_call_id:
+            if user_approval is True:
+                content = "[СИСТЕМА]: Статус согласования: ОДОБРЕНО. Пользователь подтвердил черновик. ТЕПЕРЬ ОБЯЗАТЕЛЬНО вызови инструменты записи (CalendarAddEventTool / CalendarAddTaskTool), чтобы сохранить этот план в календарь."
+            elif user_approval is False:
+                content = "[СИСТЕМА]: Статус согласования: ОТКЛОНЕНО. Отмени выполнение задачи и вежливо сообщи пользователю, что ничего записывать не стал."
+            elif user_feedback:
+                content = f"[СИСТЕМА]: Статус согласования: ПРАВКИ. Пользователь просит изменить черновик: '{user_feedback}'. Сделай новую версию с учетом правок и снова вызови инструмент апрува."
+            else:
+                content = "[СИСТЕМА]: Статус неизвестен."
+
+            # Отправляем только одно сообщение — ответ инструмента, но с мощным контекстом
+            new_messages.append(
+                ToolMessage(
+                    content=content,
+                    name="request_user_approval_tool",
+                    tool_call_id=tool_call_id
+                )
+            )
+
+        return {"messages": new_messages}
+
+    async def _commit_node(self, state: TaskState) -> Dict[str, Any]:
+        """Здесь будут вызываться реальные API записи в календарь. Пока заглушка"""
+        msg = AIMessage(content="План успешно применен и записан в календарь")
+        return {"messages": [msg], "is_completed": True}
 
     # ВСПОМОГАТЕЛЬНАЯ ЛОГИКА 
 
@@ -88,30 +144,86 @@ class TaskGraph:
     async def _fake_tool_result(self, name: str, tool_id: str, error_msg: str) -> ToolMessage:
         return ToolMessage(content=error_msg, name=name, tool_call_id=tool_id)
 
-    def _should_continue(self, state: TaskState) -> Literal["continue", "end", "emergency"]:
+    def _should_continue(self, state: TaskState) -> Literal["continue", "end", "emergency", "approval"]:
         """Функция-маршрутизатор: определяет, куда граф пойдет дальше."""
-        # ПРЕДОХРАНИТЕЛЬ (максимум 8 итераций)
+        # ПРЕДОХРАНИТЕЛЬ
         if state.get("steps_count", 0) >= 8:
             return "emergency"
         
-        # Смотрим на последнее сообщение от агента
         last_message = state["messages"][-1]
         
-        # Если агент хочет вызвать инструменты — направляем в узел tools
+        # Если агент хочет вызвать инструменты
         if getattr(last_message, "tool_calls", None):
-            return "continue"
+            # Если среди вызовов есть запрос аппрува — идем в узел human_approval
+            for tool_call in last_message.tool_calls:
+                if tool_call["name"] == "request_user_approval_tool":
+                    return "approval"
+            
+            return "continue" # Обычные системные инструменты
+            
+        return "end"
             
         # Иначе агент выдал текстовый ответ — заканчиваем работу графа
         return "end"
+    
+    def _after_approval(self, state: TaskState) -> Literal["commit", "revise", "abort"]:
+        if state.get("user_approval") is True:
+            return "commit"
+        elif state.get("user_approval") is False:
+            return "abort"
+        return "revise"
 
-    # ТОЧКА ВХОДА ИЗВНЕ 
 
-    async def run(self, query: str) -> str:
-        initial_state = {
-            "messages": [HumanMessage(content=query)],
-            "task_objective": query,
-            "steps_count": 0,
-            "is_completed": True
-        }
-        final_state = await self.graph.ainvoke(initial_state)
+    # ТОЧКА ВХОДА 
+
+    async def run(self, query: str, thread_id: str = "default_thread") -> str:
+        config = {"configurable": {"thread_id": thread_id}}
+        
+        # Проверяем, не висит ли граф на паузе в этом потоке
+        current_state = self.graph.get_state(config)
+        
+        if current_state and current_state.next:
+            # ГРАФ БЫЛ НА ПАУЗЕ. Значит - это ответ пользователя (да/нет/правки)
+            user_input = query.lower()
+            
+            # Примитивный парсер ответа. Потом можно подключить LLM для классификации
+            if "да" in user_input or "согласен" in user_input or "отлично" in user_input:
+                update_data = {"user_approval": True, "user_feedback": None}
+            elif "отмени" in user_input or "нет" in user_input and len(user_input) < 15:
+                update_data = {"user_approval": False, "user_feedback": None}
+            else:
+                update_data = {"user_approval": None, "user_feedback": query}
+                
+            # Обновляем стейт и продолжаем с того же места
+            self.graph.update_state(config, update_data)
+            final_state = await self.graph.ainvoke(None, config)
+        
+        else:
+            # ЭТО НОВЫЙ ЗАПРОС
+            initial_state = {
+                "messages": [HumanMessage(content=query)],
+                "task_objective": query,
+                "steps_count": 0,
+                "is_completed": True,
+                "draft_plan": None,
+                "user_approval": None,
+                "user_feedback": None
+            }
+            final_state = await self.graph.ainvoke(initial_state, config)
+
+        # Если граф остановился на паузе 
+        checkpoint = self.graph.get_state(config)
+        if checkpoint.next:
+            last_message = final_state["messages"][-1]
+            content = last_message.content
+            
+            # Если LLM забыла сгенерировать текст, достаем черновик из аргументов инструмента
+            if not content and getattr(last_message, "tool_calls", None):
+                approval_call = next((tc for tc in last_message.tool_calls if tc["name"] == "request_user_approval_tool"), None)
+                if approval_call:
+                    content = f"Я подготовил черновик:\n{approval_call['args'].get('draft_plan', '')}"
+            
+            # Возвращаем черновик с критически важным маркером для Live-модели
+            return f"{content}\n\n[СИСТЕМНЫЙ СТАТУС]: Требуется подтверждение. Озвучь черновик."
+
         return final_state["messages"][-1].content

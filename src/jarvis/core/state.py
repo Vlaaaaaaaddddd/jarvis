@@ -17,3 +17,12 @@ class TaskState(TypedDict):
     
     # Флаг успешности выполнения
     is_completed: bool
+
+    # Текстовое описание черновика расписания
+    draft_plan: str | None       
+
+    # True - одобрено, False - откат, None - ожидание    
+    user_approval: bool | None
+
+    # Текстовые правки от пользователя
+    user_feedback: str | None        

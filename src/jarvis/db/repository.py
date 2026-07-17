@@ -78,11 +78,12 @@ class PostgresRepository(BaseMemoryRepository):
                 ]
                 session.add_all(memory_entries)
 
-    async def search_vector_memory(self, query_embedding: list, limit: int = 5) -> list:
+    async def search_vector_memory(self, query_embedding: list, limit: int = 5, threshold: float = 0.5) -> list:
         """Делает косинусное расстояние (или L2) по векторам и возвращает похожие факты"""
         async with async_session_maker() as session:
             stmt = (
                 select(VectorMemory)
+                .where(VectorMemory.embedding.cosine_distance(query_embedding) < threshold)
                 .order_by(VectorMemory.embedding.cosine_distance(query_embedding))
                 .limit(limit)
             )
@@ -92,19 +93,24 @@ class PostgresRepository(BaseMemoryRepository):
         
     # МЕТОДЫ АГЕНТА ПАМЯТИ 
     async def get_unprocessed_facts(self) -> list:
-        """
-        Выбирает из session_log все важные необработанные факты
-        """
-        async with async_session_maker() as session:
-            stmt = (
-                select(SessionLog)
-                .where(SessionLog.role == "fact", SessionLog.processed == False)
-                .order_by(SessionLog.timestamp.asc()) # Обрабатываем в хронологическом порядке
-            )
-            result = await session.execute(stmt)
-            logs = result.scalars().all()
-            # Возвращаем список словарей, чтобы изолировать Агента от ORM-моделей
-            return [{"id": log.id, "content": log.content} for log in logs]
+            """Выбирает из session_log все важные необработанные факты вместе с временной меткой"""
+            async with async_session_maker() as session:
+                stmt = (
+                    select(SessionLog)
+                    .where(SessionLog.role == "fact", SessionLog.processed == False)
+                    .order_by(SessionLog.timestamp.asc())
+                )
+                result = await session.execute(stmt)
+                logs = result.scalars().all()
+                
+                return [
+                    {
+                        "id": log.id, 
+                        "content": log.content,
+                        "created_at": log.timestamp.strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else "Неизвестно"
+                    } 
+                    for log in logs
+                ]
 
     async def mark_facts_as_processed(self, log_ids: list) -> None:
         """

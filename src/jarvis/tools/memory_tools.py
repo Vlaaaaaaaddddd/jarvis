@@ -1,51 +1,75 @@
+import json
 from langchain_core.tools import StructuredTool
 from jarvis.services.embeddings import EmbeddingService
 from jarvis.db.repository import PostgresRepository
 
-def create_search_memory_tool(repository: PostgresRepository, embedding_service: EmbeddingService) -> StructuredTool:
-    """Фабрика для инструмента RAG-поиска по Бэк-офису"""
+def create_search_memory_tool(repository: PostgresRepository, embedding_service: EmbeddingService, llm_service) -> StructuredTool:
+    """Фабрика для продвинутого инструмента RAG-поиска с декомпозицией запросов"""
     
     async def search_user_memory(query: str) -> str:
         """
-        Используй этот инструмент для поиска по долговременной памяти, воспоминаниям, 
-        заметкам, предпочтениям, а также МЯГКИМ или НЕФОРМАЛЬНЫМ ПЛАНАМ, намерениям и задачам пользователя, 
-        которые он упоминал в прошлых разговорах.
-        
-        ВАЖНО: Если пользователь спрашивает про свои планы, расписание или дела на день, ты 
-        ОБЯЗАН вызвать этот инструмент СОВМЕСТНО с инструментом Календаря, 
-        чтобы объединить жесткий график из календаря и неформальные контексты из памяти.
-
-        Args:
-            query: Поисковый запрос на естественном языке, сформулированный для поиска по памяти (например: 'планы на пятницу', 'наработки по Docker').
+        Используй этот инструмент для глубокого поиска по долговременной памяти, 
+        предпочтениям, планам и неформальным контекстам пользователя.
+        Инструмент автоматически разбивает сложные многосоставные запросы на атомарные темы.
         """
         try:
             if not query or not query.strip():
                 return "Поисковый запрос пуст"
 
-            query_vector = await embedding_service.get_embedding(query)
-            if not query_vector:
-                return "Системная ошибка: Не удалось сгенерировать вектор для поиска."
-
-            memories = await repository.search_vector_memory(query_vector, limit=5)
+            # Быстрая декомпозиция сложного запроса силами LLM
+            decomposition_prompt = (
+                "Ты — поисковый оптимизатор базы знаний. Разбей сложный запрос пользователя на "
+                "отдельные, короткие, независимые ключевые слова или сущности для точечного векторного поиска. "
+                "Игнорируй союзы и глаголы. Выдели только чистые объекты.\n"
+                f"Запрос для анализа: '{query}'\n"
+                "Верни ответ СТРОГО в формате JSON: [\"сущность1\", \"сущность2\"] без markdown и рассуждений."
+            )
             
-            if not memories:
-                return "В долговременной семантической памяти не найдено релевантных записей"
+            try:
+                raw_keywords = await llm_service.analyze_facts(
+                    facts_payload=decomposition_prompt, 
+                    system_instruction="Ты возвращаешь только чистый JSON массив строк."
+                )
+                keywords = json.loads(raw_keywords)
+            except Exception:
+                keywords = [query]
 
-            formatted_results = ["=== РЕЗУЛЬТАТЫ ПОИСКА ИЗ ДОЛГОВРЕМЕННОЙ ПАМЯТИ ==="]
-            for idx, mem in enumerate(memories, 1):
-                text = mem.text if hasattr(mem, 'text') else mem.get('text', '')
-                meta = mem.meta_data if hasattr(mem, 'meta_data') else mem.get('meta_data', {})
-                date_str = meta.get('created_at', 'Дата не указана') if meta else 'Дата не указана'
+            # Изолированный поиск по каждому ключевому слову
+            all_memories = []
+            seen_texts = set()
+
+            for kw in keywords:
+                query_vector = await embedding_service.get_embedding(kw)
+                if not query_vector:
+                    continue
                 
+                # Используем наш репозиторий с отсечением мусора
+                memories = await repository.search_vector_memory(query_vector, limit=2, threshold=0.55)
+                
+                for mem in memories:
+                    text = mem.get('text', '')
+                    if text and text not in seen_texts:
+                        seen_texts.add(text)
+                        all_memories.append(mem)
+
+            if not all_memories:
+                return f"В долговременной памяти не найдено релевантных записей по ключам: {keywords}"
+
+            # Форматируем результат для Агента-Исследователя
+            formatted_results = [f"=== РЕЗУЛЬТАТЫ УМНОГО ПОИСКА ПО ПАМЯТИ (Ключи: {keywords}) ==="]
+            for idx, mem in enumerate(all_memories, 1):
+                text = mem.get('text', '')
+                meta = mem.get('metadata') or {}
+                date_str = meta.get('created_at', 'Дата не указана')
                 formatted_results.append(f"{idx}. [{date_str}] {text}")
                 
             return "\n".join(formatted_results)
 
         except Exception as e:
-            return f"Ошибка при выполнении RAG-поиска по памяти: {str(e)}"
+            return f"Ошибка при выполнении умного RAG-поиска: {str(e)}"
 
     return StructuredTool.from_function(
         coroutine=search_user_memory,
         name="search_user_memory",
-        description="Поиск по долговременной семантической памяти пользователя (предпочтения, планы, факты)."
+        description="Поиск по долговременной семантической памяти пользователя (автоматически дробит сложные запросы)."
     )

@@ -48,7 +48,9 @@ class MemoryAgent:
             system_prompt = MEMORY_AGENT_PROMPT.format(profile_json=profile_json_str)
 
             # Подготавливаем нагрузку 
-            facts_payload = "Новые факты:\n" + "\n".join([f"- [ID: {f['id']}] {f['content']}" for f in unprocessed])
+            facts_payload = "Новые сырые факты для анализа:\n"
+            for f in unprocessed:
+                facts_payload += f"- [ID: {f['id']}] [Дата создания: {f['created_at']}] {f['content']}\n"
 
             # Делегируем запрос в LLM-сервис
             llm_response_text = await self.llm.analyze_facts(facts_payload, system_prompt)

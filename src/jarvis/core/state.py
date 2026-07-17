@@ -6,26 +6,13 @@ class TaskState(TypedDict):
     """
     Эфемерное состояние для решения одной делегированной задачи.
     """
-    # Список сообщений (шагов рассуждения)
-    messages: Annotated[Sequence[BaseMessage], add_messages]
-    
-    # Исходная формулировка задачи от пользователя
-    task_objective: str
-    
-    # Счетчик шагов для жесткого лимита
+    messages: Annotated[Sequence[BaseMessage], add_messages] # Список сообщений
+    task_objective: str # Исходная формулировка задачи от пользователя
     steps_count: int
-    
-    # Флаг успешности выполнения
     is_completed: bool
-
-    # какой агент  вызвал инструмент или передал ход
     sender: str | None  
-
-    # Текстовое описание черновика расписания
-    draft_plan: str | None       
-
-    # True - одобрено, False - откат, None - ожидание    
-    user_approval: bool | None
+    draft_plan: str | None # черновик расписания
+    user_approval: bool | None # True - одобрено, False - откат, None - ожидание    
 
     # Структурированные списки для автоматического коммита на Python
     draft_events: list[dict] | None

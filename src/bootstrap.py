@@ -40,13 +40,13 @@ async def create_app() -> JarvisEngine:
         calendar_add_event_tool,
         calendar_add_task_tool,
         calendar_get_schedule_tool, 
-        create_search_memory_tool(repository=memory_repo, embedding_service=embedding_service),
+        create_search_memory_tool(repository=memory_repo, embedding_service=embedding_service, llm_service=memory_llm_service),
         request_user_approval_tool
     ]
 
     # Внутреннее ядро
     internal_llm = Gemini()
-    task_graph = TaskGraph(llm=internal_llm, tools=tools)
+    task_graph = TaskGraph(llm=internal_llm, tools=tools, repository=memory_repo, embedding_service=embedding_service)
     
     # Внешнее 
     live_service = GeminiLiveService()

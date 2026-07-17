@@ -2,18 +2,28 @@ import asyncio
 from datetime import datetime
 from typing import Dict, Any, Literal
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
+from langchain_core.messages import ToolMessage, AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.tools import BaseTool
+from jarvis.services.embeddings import EmbeddingService
+from jarvis.db.repository import PostgresRepository
 
 from jarvis.core.state import TaskState
 from jarvis.config import BaseLLM, months, weekdays, supervisor_prompt, calendar_agent_prompt, research_agent_prompt
 from jarvis.utils.logger import get_logger
 
 class TaskGraph:
-    def __init__(self, llm: BaseLLM, tools: list[BaseTool]):
+    def __init__(
+            self, 
+            llm: BaseLLM, 
+            tools: list[BaseTool], 
+            repository: PostgresRepository,        
+            embedding_service: EmbeddingService
+            ):
         self.llm = llm
         self.tools = {tool.name: tool for tool in tools} 
+        self.repository = repository
+        self.embedding_service = embedding_service
         self.memory = MemorySaver() 
         self.graph = self._build_graph()
         self.logger = get_logger("TaskGraph")
@@ -34,8 +44,12 @@ class TaskGraph:
         workflow.add_node("commit_node", self._commit_node)  
         workflow.add_node("abort_node", self._abort_node)    
 
+        workflow.add_node("prefetch_node", self._prefetch_node)
+
         # Точка входа
-        workflow.set_entry_point("supervisor")
+        workflow.set_entry_point("prefetch_node")
+
+        workflow.add_edge("prefetch_node", "supervisor")
 
         # Маршрутизация от Супервизора
         workflow.add_conditional_edges(
@@ -106,13 +120,64 @@ class TaskGraph:
 
     # УЗЛЫ (NODES) 
 
+    async def _prefetch_node(self, state: TaskState) -> Dict[str, Any]:
+        """вытаскивает контекст из памяти перед началом работы"""
+        self.logger.info("--- [NODE] PREFETCH (RAG) ---")
+
+        # исходный запрос пользователя
+        user_query = state["messages"][-1].content
+        
+        if not user_query or not isinstance(user_query, str) or not user_query.strip():
+            return {"sender": "prefetch"}
+
+        try:
+            # Генерируем вектор
+            query_vector = await self.embedding_service.get_embedding(user_query)
+            if not query_vector:
+                self.logger.warning("Prefetch: Не удалось сгенерировать вектор для поиска.")
+                return {"sender": "prefetch"}
+
+            # Ищем релевантные воспоминания 
+            memories = await self.repository.search_vector_memory(query_vector, limit=3)
+            
+            if not memories:
+                self.logger.info("Prefetch: В долговременной памяти не найдено релевантных записей.")
+                return {"sender": "prefetch"}
+
+            # Форматируем результаты для системного промпта агентов
+            formatted_results = ["[ВНУТРЕННЯЯ ПАМЯТЬ ДЖАРВИСА]: Найдены релевантные факты из прошлых бесед:"]
+            for idx, mem in enumerate(memories, 1):
+                text = mem.text if hasattr(mem, 'text') else mem.get('text', '')
+                meta = mem.meta_data if hasattr(mem, 'meta_data') else mem.get('meta_data', {})
+                date_str = meta.get('created_at', 'Дата не указана') if meta else 'Дата не указана'
+                formatted_results.append(f"- [{date_str}] {text}")
+            
+            rag_context = "\n".join(formatted_results)
+            rag_context += "\nИспользуй эти факты для планирования и ответов, но не цитируй их дословно без необходимости."
+            
+            # 4. Внедряем системное сообщение в граф
+            context_msg = SystemMessage(content=rag_context)
+            self.logger.info(f"Prefetch Node успешно внедрил {memories}")
+            
+            return {
+                "messages": [context_msg],
+                "sender": "prefetch"
+            }
+
+        except Exception as e:
+            self.logger.error(f"Ошибка в Prefetch Node при работе с RAG: {str(e)}")
+            return {"sender": "prefetch"}
+
     async def _supervisor_node(self, state: TaskState) -> Dict[str, Any]:
         """Главный агент, пиздит других агентов"""
         self.logger.info("--- [NODE] SUPERVISOR ---")
+
+        current_time_str = datetime.now().strftime("%A, %Y-%m-%d")
+        formatted_supervisor_prompt = supervisor_prompt.format(time_context=current_time_str)
         
         response = await self.llm.generate_stateless(
             messages=state["messages"],
-            system_prompt=supervisor_prompt,
+            system_prompt=formatted_supervisor_prompt,
             tools=[] # У координатора нет инструментов
         )
 
@@ -169,11 +234,14 @@ class TaskGraph:
     async def _research_agent_node(self, state: TaskState) -> Dict[str, Any]:
         """Агент поисковик (пока заглушка)"""
         self.logger.info("--- [NODE] RESEARCH AGENT ---")
+
+        allowed_names = ["search_user_memory"] 
+        research_tools = [self.tools[name] for name in allowed_names if name in self.tools]
         
         response = await self.llm.generate_stateless(
             messages=state["messages"],
             system_prompt=research_agent_prompt,
-            tools=[] # На этапе заглушки инструменты не даем
+            tools=research_tools # На этапе заглушки инструменты не даем
         )
 
         return {
@@ -342,11 +410,7 @@ class TaskGraph:
             elif approval_status == "revised":
                 update_data = {"user_approval": None, "user_feedback": query}
             else:
-                user_input = query.lower()
-                if any(w in user_input for w in ["да", "согласен", "отлично", "записывай"]):
-                    update_data = {"user_approval": True}
-                else:
-                    update_data = {"user_approval": None, "user_feedback": query}
+                update_data = {"user_approval": None, "user_feedback": query}
                 
             self.graph.update_state(config, update_data)
             final_state = await self.graph.ainvoke(None, config)

@@ -1,11 +1,13 @@
 import asyncio
+from datetime import datetime
 from typing import Dict, Any, Literal
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import ToolMessage, AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import ToolMessage, AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.tools import BaseTool
+
 from jarvis.core.state import TaskState
-from jarvis.config import BaseLLM
+from jarvis.config import BaseLLM, months, weekdays, supervisor_prompt, calendar_agent_prompt, research_agent_prompt
 from jarvis.utils.logger import get_logger
 
 class TaskGraph:
@@ -17,46 +19,83 @@ class TaskGraph:
         self.logger = get_logger("TaskGraph")
 
     def _build_graph(self):
-        """Конфигурирует узлы и ребра"""
+        """Конфигурирует узлы и ребра мультиагентного графа"""
         workflow = StateGraph(TaskState)
 
-        # Добавляем логические узлы (Nodes)
-        workflow.add_node("agent", self._agent_node)
+        # sузлы специалистов и координатора
+        workflow.add_node("supervisor", self._supervisor_node)
+        workflow.add_node("calendar_agent", self._calendar_agent_node)
+        workflow.add_node("research_agent", self._research_agent_node)
+        
+        # системные узлы
         workflow.add_node("tools", self._tools_node)
         workflow.add_node("emergency_stop", self._emergency_node)
         workflow.add_node("human_approval", self._human_approval_node)
         workflow.add_node("commit_node", self._commit_node)  
         workflow.add_node("abort_node", self._abort_node)    
 
-        workflow.add_edge("human_approval", "agent")
+        # Точка входа
+        workflow.set_entry_point("supervisor")
 
-        # Указываем, с какого узла граф начинает работу
-        workflow.set_entry_point("agent")
-
-        # Настраиваем условные переходы (Edges) от узла "agent"
+        # Маршрутизация от Супервизора
         workflow.add_conditional_edges(
-            "agent",
+            "supervisor",
+            self._route_from_supervisor,
+            {
+                "calendar_agent": "calendar_agent",
+                "research_agent": "research_agent",
+                "end": END,
+                "emergency": "emergency_stop"
+            }
+        )
+
+        # Маршрутизация от CalendarAgent
+        workflow.add_conditional_edges(
+            "calendar_agent",
             self._should_continue,
             {
                 "continue": "tools", 
-                "end": END, 
+                "supervisor": "supervisor",
                 "emergency": "emergency_stop",
                 "approval": "human_approval"
             }
         )
 
-        workflow.add_edge("tools", "agent")
+        # Маршрутизация от ResearchAgent
+        workflow.add_conditional_edges(
+            "research_agent",
+            self._should_continue,
+            {
+                "continue": "tools", 
+                "supervisor": "supervisor",
+                "emergency": "emergency_stop",
+                "approval": "human_approval"
+            }
+        )
+
+        # Маршрутизация от Инструментов (возврат к тому, кто вызвал)
+        workflow.add_conditional_edges(
+            "tools",
+            self._route_from_tools,
+            {
+                "calendar_agent": "calendar_agent",
+                "research_agent": "research_agent"
+            }
+        )
+
+        # Завершающие переходы
         workflow.add_edge("emergency_stop", END)
         workflow.add_edge("commit_node", END)
         workflow.add_edge("abort_node", END)
 
+        # Переходы от узла согласования
         workflow.add_conditional_edges(
             "human_approval",
             self._after_approval,
             {
                 "commit": "commit_node",
                 "abort": "abort_node",
-                "revise": "agent"
+                "revise": "calendar_agent" # Правки возвращаются в календарный узел
             }
         )
 
@@ -67,21 +106,57 @@ class TaskGraph:
 
     # УЗЛЫ (NODES) 
 
-    async def _agent_node(self, state: TaskState) -> Dict[str, Any]:
-        """Узел вызова LLM. Отвечает за генерацию следующего шага или ответа"""
-        response = await self.llm.generate_stateless(state["messages"])
+    async def _supervisor_node(self, state: TaskState) -> Dict[str, Any]:
+        """Главный агент, пиздит других агентов"""
+        self.logger.info("--- [NODE] SUPERVISOR ---")
+        
+        response = await self.llm.generate_stateless(
+            messages=state["messages"],
+            system_prompt=supervisor_prompt,
+            tools=[] # У координатора нет инструментов
+        )
 
-        self.logger.info(f"LLM Response: {response.content}")
+        self.logger.info(f"Supervisor Router Output: {response.content}")
+        return {
+            "messages": [response], 
+            "steps_count": state.get("steps_count", 0) + 1,
+            "sender": "supervisor"
+        }
+
+    async def _calendar_agent_node(self, state: TaskState) -> Dict[str, Any]:
+        """Специалист по календарю и расписанию"""
+        self.logger.info("--- [NODE] CALENDAR AGENT ---")
+
+        dt = datetime.now()
+        time_str = (
+            f"Текущая дата (ISO): {dt.strftime('%Y-%m-%d')}\n"
+            f"День недели: {weekdays[dt.weekday()]}\n"
+            f"Точное время: {dt.strftime('%H:%M:%S')}"
+        )
+
+        dynamic_system_prompt = calendar_agent_prompt.format(time_context=time_str)
+        
+        # Отдаем ему только те инструменты, которые нужны для работы
+        allowed_names = ["calendar_add_event_tool", "calendar_add_task_tool", "calendar_get_schedule_tool", "request_user_approval_tool"]
+        calendar_tools = [self.tools[name] for name in allowed_names if name in self.tools]
+        
+        response = await self.llm.generate_stateless(
+            messages=state["messages"],
+            system_prompt=dynamic_system_prompt,
+            tools=calendar_tools
+        )
+
         if response.tool_calls:
-            self.logger.info(f"LLM requested tools: {[tc['name'] for tc in response.tool_calls]}")
+            self.logger.info(f"CalendarAgent requested tools: {[tc['name'] for tc in response.tool_calls]}")
 
         update_data = {
             "messages": [response], 
-            "steps_count": state.get("steps_count", 0) + 1
+            "steps_count": state.get("steps_count", 0) + 1,
+            "sender": "calendar_agent" # кто вызвал инструмент
         }
         
+        # данные черновика
         if getattr(response, "tool_calls", None):
-            self.logger.info(f"LLM requested tools: {[tc['name'] for tc in response.tool_calls]}")
             for tc in response.tool_calls:
                 if tc["name"] == "request_user_approval_tool":
                     args = tc["args"]
@@ -90,8 +165,26 @@ class TaskGraph:
                     update_data["draft_tasks"] = args.get("draft_tasks", [])
         
         return update_data
+
+    async def _research_agent_node(self, state: TaskState) -> Dict[str, Any]:
+        """Агент поисковик (пока заглушка)"""
+        self.logger.info("--- [NODE] RESEARCH AGENT ---")
+        
+        response = await self.llm.generate_stateless(
+            messages=state["messages"],
+            system_prompt=research_agent_prompt,
+            tools=[] # На этапе заглушки инструменты не даем
+        )
+
+        return {
+            "messages": [response], 
+            "steps_count": state.get("steps_count", 0) + 1,
+            "sender": "research_agent"
+        }
     
     async def _tools_node(self, state: TaskState) -> Dict[str, Any]:
+        """Выполняет запрошенные инструменты"""
+        self.logger.info(f"--- [NODE] TOOLS (Caller: {state.get('sender')}) ---")
         last_message = state["messages"][-1]
         tasks = []
         for tc in last_message.tool_calls:
@@ -105,7 +198,6 @@ class TaskGraph:
         return {"messages": results}
 
     async def _emergency_node(self, state: TaskState) -> Dict[str, Any]:
-        """Узел, который отрабатывает, если мы застряли в цикле"""
         msg = AIMessage(content="[СИСТЕМНОЕ СООБЩЕНИЕ] Выполнение прервано: превышен лимит шагов.")
         return {"messages": [msg], "is_completed": False}
     
@@ -123,7 +215,6 @@ class TaskGraph:
                     break
 
         new_messages = []
-        
         if tool_call_id:
             if user_approval is True:
                 content = "[СИСТЕМА]: Статус: ОДОБРЕНО. План передан на автоматическую запись."
@@ -137,15 +228,12 @@ class TaskGraph:
             new_messages.append(
                 ToolMessage(content=content, name="request_user_approval_tool", tool_call_id=tool_call_id)
             )
-
         return {"messages": new_messages}
 
     async def _commit_node(self, state: TaskState) -> Dict[str, Any]:
-        """Выполняет реальную запись в календарь на чистом Python без LLM."""
         events = state.get("draft_events") or []
         tasks = state.get("draft_tasks") or []
         
-        # Извлекаем функции из твоих инструментов
         add_event_tool = self.tools.get("calendar_add_event_tool")
         add_task_tool = self.tools.get("calendar_add_task_tool")
         
@@ -161,7 +249,6 @@ class TaskGraph:
                 await add_task_tool.ainvoke(task)
             await asyncio.sleep(0.5)
             
-        # Формируем финальный ответ от ллм
         msg = AIMessage(content="Отлично, я внес все события и задачи в твой календарь.")
         return {"messages": [msg], "is_completed": True}
     
@@ -173,46 +260,54 @@ class TaskGraph:
             "draft_tasks": []
         }
 
-    # ВСПОМОГАТЕЛЬНАЯ ЛОГИКА 
+    # ЛОГИКА МАРШРУТИЗАЦИИ И ВСПОМОГАТЕЛЬНЫЕ 
 
-    async def _execute_tool(self, tool: BaseTool, args: dict, tool_id: str) -> ToolMessage:
-        """Безопасная обертка для выполнения одного инструмента."""
-        self.logger.debug(f"Tool {tool.name} called with args: {args}")
-        try:
-            # LangChain ainvoke сам валидирует аргументы!
-            result = await tool.ainvoke(args)
-            self.logger.debug(f"Tool {tool.name} result: {str(result)[:200]}")
-        except Exception as e:
-            self.logger.error(f"Error in {tool.name}: {str(e)}")
-            result = f"Критическая ошибка выполнения {tool.name}: {str(e)}"
+    def _route_from_supervisor(self, state: TaskState) -> Literal["calendar_agent", "research_agent", "end", "emergency"]:
+        if state.get("steps_count", 0) >= 12:
+            return "emergency"
+
+        raw_content = state["messages"][-1].content
         
-        return ToolMessage(content=str(result), name=tool.name, tool_call_id=tool_id)
+        if isinstance(raw_content, list):
+            text_content = " ".join([block.get("text", "") for block in raw_content if isinstance(block, dict)])
+        else:
+            # Если пришла обычная строка
+            text_content = str(raw_content)
+            
+        last_msg = text_content.upper()
+        
+        # парсинг ответа супервизора
+        if "CALENDARAGENT" in last_msg:
+            return "calendar_agent"
+        elif "RESEARCHAGENT" in last_msg:
+            return "research_agent"
+        else:
+            return "end" # кончил или не распознал команду
 
-    async def _fake_tool_result(self, name: str, tool_id: str, error_msg: str) -> ToolMessage:
-        return ToolMessage(content=error_msg, name=name, tool_call_id=tool_id)
-
-    def _should_continue(self, state: TaskState) -> Literal["continue", "end", "emergency", "approval"]:
-        """Функция-маршрутизатор: определяет, куда граф пойдет дальше."""
-        # ПРЕДОХРАНИТЕЛЬ
-        if state.get("steps_count", 0) >= 8:
+    def _should_continue(self, state: TaskState) -> Literal["continue", "supervisor", "emergency", "approval"]:
+        """Куда идти специалисту после его хода"""
+        if state.get("steps_count", 0) >= 12:
             return "emergency"
         
         last_message = state["messages"][-1]
         
-        # Если агент хочет вызвать инструменты
+        # Если вызван инструмент
         if getattr(last_message, "tool_calls", None):
-            # Если среди вызовов есть запрос аппрува — идем в узел human_approval
             for tool_call in last_message.tool_calls:
                 if tool_call["name"] == "request_user_approval_tool":
                     return "approval"
+            return "continue" # Идем в узел инструментов
             
-            return "continue" # Обычные системные инструменты
-            
-        return "end"
-            
-        # Иначе агент выдал текстовый ответ — заканчиваем работу графа
-        return "end"
-    
+        # Если агент выдал простой текстовый ответ, он возвращает управление Супервизору
+        return "supervisor"
+
+    def _route_from_tools(self, state: TaskState) -> Literal["calendar_agent", "research_agent"]:
+        """Возвращает ход тому агенту, который запрашивал инструмент"""
+        sender = state.get("sender", "calendar_agent") # по умолчанию фолбек
+        if sender == "research_agent":
+            return "research_agent"
+        return "calendar_agent"
+
     def _after_approval(self, state: TaskState) -> Literal["commit", "revise", "abort"]:
         if state.get("user_approval") is True:
             return "commit"
@@ -220,17 +315,26 @@ class TaskGraph:
             return "abort"
         return "revise"
 
+    async def _execute_tool(self, tool: BaseTool, args: dict, tool_id: str) -> ToolMessage:
+        self.logger.debug(f"Tool {tool.name} called with args: {args}")
+        try:
+            result = await tool.ainvoke(args)
+            self.logger.debug(f"Tool {tool.name} result: {str(result)[:200]}")
+        except Exception as e:
+            self.logger.error(f"Error in {tool.name}: {str(e)}")
+            result = f"Критическая ошибка выполнения {tool.name}: {str(e)}"
+        return ToolMessage(content=str(result), name=tool.name, tool_call_id=tool_id)
+
+    async def _fake_tool_result(self, name: str, tool_id: str, error_msg: str) -> ToolMessage:
+        return ToolMessage(content=error_msg, name=name, tool_call_id=tool_id)
 
     # ТОЧКА ВХОДА 
 
     async def run(self, query: str, approval_status: str = None, thread_id: str = "default_thread") -> str:
         config = {"configurable": {"thread_id": thread_id}}
-        
-        # Проверяем, не висит ли граф на паузе в этом потоке
         current_state = self.graph.get_state(config)
         
         if current_state and current_state.next:
-            # ИСПОЛЬЗУЕМ СТАТУС ОТ ВНЕШНЕГО АГЕНТА ВМЕСТО РЕГУЛЯРОК
             if approval_status == "approved":
                 update_data = {"user_approval": True, "user_feedback": None}
             elif approval_status == "rejected":
@@ -238,7 +342,6 @@ class TaskGraph:
             elif approval_status == "revised":
                 update_data = {"user_approval": None, "user_feedback": query}
             else:
-                # Надежный фолбек, если статус не передан
                 user_input = query.lower()
                 if any(w in user_input for w in ["да", "согласен", "отлично", "записывай"]):
                     update_data = {"user_approval": True}
@@ -253,6 +356,7 @@ class TaskGraph:
                 "task_objective": query,
                 "steps_count": 0,
                 "is_completed": False,
+                "sender": None, # Инициализируем пустое поле
                 "draft_plan": None,
                 "draft_events": [],
                 "draft_tasks": [],
@@ -273,4 +377,9 @@ class TaskGraph:
             
             return f"{content}\n\n[СИСТЕМНЫЙ СТАТУС]: Требуется подтверждение. Озвучь черновик."
 
-        return final_state["messages"][-1].content
+        last_message = final_state["messages"][-1]
+        content = last_message.content
+
+        if isinstance(content, str) and "FINISH" in content.upper():
+            if len(final_state["messages"]) > 1:
+                content = final_state["messages"][-2].content

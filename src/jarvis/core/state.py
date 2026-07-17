@@ -18,6 +18,9 @@ class TaskState(TypedDict):
     # Флаг успешности выполнения
     is_completed: bool
 
+    # какой агент  вызвал инструмент или передал ход
+    sender: str | None  
+
     # Текстовое описание черновика расписания
     draft_plan: str | None       
 

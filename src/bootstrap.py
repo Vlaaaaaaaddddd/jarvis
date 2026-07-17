@@ -45,7 +45,7 @@ async def create_app() -> JarvisEngine:
     ]
 
     # Внутреннее ядро
-    internal_llm = Gemini(tools=tools)
+    internal_llm = Gemini()
     task_graph = TaskGraph(llm=internal_llm, tools=tools)
     
     # Внешнее 

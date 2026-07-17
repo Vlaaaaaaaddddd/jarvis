@@ -1,33 +1,38 @@
 import os 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 
-from jarvis.config import BaseLLM, Gemini_model, systm_prompt
+from jarvis.config import BaseLLM, Gemini_model
 from jarvis.utils.logger import get_logger
 
 class Gemini(BaseLLM):
-    def __init__(self, tools: list = None):
+    def __init__(self):
         self.logger = get_logger("GeminiAPI")
         
-        # Элегантная инициализация модели
-        self.llm = ChatGoogleGenerativeAI(
+        self.base_llm = ChatGoogleGenerativeAI(
             model=Gemini_model,
             temperature=0.4, 
             api_key=os.getenv("GEMINI_API_KEY")
         )
-        
-        # Привязываем инструменты напрямую, LangChain сам соберет JSON-схемы
-        if tools:
-            self.llm = self.llm.bind_tools(tools)
 
-    async def generate_stateless(self, messages: list[BaseMessage]):
+    async def generate_stateless(self, messages: list[BaseMessage], system_prompt: str = None, tools: list = None):
         try:
-            if not any(isinstance(m, SystemMessage) for m in messages):
-                messages = [SystemMessage(content=systm_prompt)] + messages
+            clean_messages = []
+            if system_prompt:
+                clean_messages.append(SystemMessage(content=system_prompt))
+                
+            for m in messages:
+                if isinstance(m, SystemMessage):
+                    continue
+                if isinstance(m, AIMessage) and not getattr(m, "tool_calls", None):
+                    # Превращаем внутренние рассуждения агентов в "контекст" для следующего шага
+                    clean_messages.append(HumanMessage(content=f"[Внутренний статус]: {m.content}"))
+                else:
+                    clean_messages.append(m)
 
-            # ainvoke сам конвертирует BaseMessage в формат Google и обратно
-            response = await self.llm.ainvoke(messages)
-            return response
+            llm_with_tools = self.base_llm.bind_tools(tools) if tools else self.base_llm
+            return await llm_with_tools.ainvoke(clean_messages)
+            
         except Exception as e:
             import traceback
             self.logger.error(f"Gemini API Critical Error: {str(e)}\n{traceback.format_exc()}")

@@ -80,13 +80,13 @@ class AgentNodes:
         """Агент поисковик (пока заглушка)"""
         self.logger.info("--- [NODE] RESEARCH AGENT ---")
 
-        allowed_names = ["search_user_memory"] 
+        allowed_names = ["search_user_memory", "internet_search_tool"] 
         research_tools = [self.tools[name] for name in allowed_names if name in self.tools]
         
         response = await self.llm.generate_stateless(
             messages=state["messages"],
             system_prompt=research_agent_prompt,
-            tools=research_tools # На этапе заглушки инструменты не даем
+            tools=research_tools 
         )
 
         return {
@@ -159,9 +159,9 @@ class SystemNodes:
         for tc in last_message.tool_calls:
             tool_name = tc["name"]
             if tool_name in self.tools:
-                tasks.append(self._execute_tool(self.tools[tool_name], tc["args"], tc["id"]))
+                tasks.append(self.execute_tool(self.tools[tool_name], tc["args"], tc["id"]))
             else:
-                tasks.append(self._fake_tool_result(tool_name, tc["id"], "Ошибка: Инструмент не найден"))
+                tasks.append(self.fake_tool_result(tool_name, tc["id"], "Ошибка: Инструмент не найден"))
         
         results = await asyncio.gather(*tasks)
         return {"messages": results}
@@ -215,7 +215,8 @@ class SystemNodes:
         for task in tasks:
             self.logger.info(f"Авто-запись задачи: {task}")
             if add_task_tool:
-                await add_task_tool.ainvoke(task)
+                result = await add_task_tool.ainvoke(task)
+                self.logger.info(f"Результат API Google Tasks: {result}")
             await asyncio.sleep(0.5)
             
         msg = AIMessage(content="Отлично, я внес все события и задачи в твой календарь.")

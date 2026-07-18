@@ -8,6 +8,7 @@ class TaskState(TypedDict):
     """
     messages: Annotated[Sequence[BaseMessage], add_messages] # Список сообщений
     task_objective: str # Исходная формулировка задачи от пользователя
+    prefetched_context: str | None
     steps_count: int
     is_completed: bool
     sender: str | None  

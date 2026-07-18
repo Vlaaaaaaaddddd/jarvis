@@ -15,10 +15,9 @@ def route_from_supervisor(state: TaskState) -> Literal["calendar_agent", "resear
         
     last_msg = text_content.upper()
     
-    # парсинг ответа супервизора
-    if "CALENDARAGENT" in last_msg:
+    if "НАПРАВЛЕНИЕ: CALENDARAGENT" in last_msg:
         return "calendar_agent"
-    elif "RESEARCHAGENT" in last_msg:
+    elif "НАПРАВЛЕНИЕ: RESEARCHAGENT" in last_msg:
         return "research_agent"
     else:
         return "end" # кончил или не распознал команду

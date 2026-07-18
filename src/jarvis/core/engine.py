@@ -26,11 +26,8 @@ class JarvisEngine:
         self._is_running = False
         self._tasks = []
 
-        self._audio_queue = asyncio.Queue()
-        self._audio_task = None
-
         self.last_activity_time = time.time()
-        self.idle_timeout = 120  # 2 минуты тишины
+        self.idle_timeout = 180  # 2 минуты тишины
         self.is_consolidating = False
         self.consolidation_task = None
 

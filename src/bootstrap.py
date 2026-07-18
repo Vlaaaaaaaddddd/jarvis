@@ -1,5 +1,6 @@
 from jarvis.services import Gemini, GeminiLiveService, MemoryLLMService, EmbeddingService
 from jarvis.core import JarvisEngine, TaskGraph, MemoryAgent
+from jarvis.core.nodes import AgentNodes, SystemNodes
 from jarvis.front.render import JarvisUI
 from jarvis.handling import MainInputHandler, MainOutputHandler
 from jarvis.tools.time_tool import time_tool
@@ -12,6 +13,7 @@ from jarvis.tools.approval_tool import request_user_approval_tool
 from jarvis.tools.memory_tools import create_search_memory_tool
 from jarvis.db.database import init_db
 from jarvis.db.repository import PostgresRepository
+
 
 import time
 
@@ -35,7 +37,7 @@ async def create_app() -> JarvisEngine:
         llm_service=memory_llm_service,
         embedding_service=embedding_service)
 
-    tools = [
+    tools_list = [
         time_tool, 
         calendar_add_event_tool,
         calendar_add_task_tool,
@@ -43,10 +45,23 @@ async def create_app() -> JarvisEngine:
         create_search_memory_tool(repository=memory_repo, embedding_service=embedding_service, llm_service=memory_llm_service),
         request_user_approval_tool
     ]
+    tools_dict = {tool.name: tool for tool in tools_list}
 
     # Внутреннее ядро
     internal_llm = Gemini()
-    task_graph = TaskGraph(llm=internal_llm, tools=tools, repository=memory_repo, embedding_service=embedding_service)
+    agent_nodes = AgentNodes(
+        llm=internal_llm,
+        tools=tools_dict
+    )
+    system_nodes = SystemNodes(
+        tools=tools_dict,
+        repository=memory_repo,
+        embedding_service=embedding_service
+    )
+    task_graph = TaskGraph(
+        agent_nodes=agent_nodes, 
+        system_nodes=system_nodes
+    )
     
     # Внешнее 
     live_service = GeminiLiveService()

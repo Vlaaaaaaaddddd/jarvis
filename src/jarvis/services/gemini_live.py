@@ -7,6 +7,9 @@ from google.genai import types
 
 from jarvis.config import BaseLiveService, live_model_system_prompt, Gemini_live_model
 from jarvis.tools.live_tools import DelegateHeavyTaskTool, MemorizeFactTool, ForceConsolidationTool
+from jarvis.utils.logger import get_logger
+
+logger = get_logger("live")
 
 class GeminiLiveService(BaseLiveService):
     def __init__(self):
@@ -64,9 +67,10 @@ class GeminiLiveService(BaseLiveService):
                     self._session = session
                     self._mute_mic_until = 0.0
                     await self._receive_loop(on_audio_received)
-            except Exception:
+            except Exception as e:
                 if self._is_running:
-                    await asyncio.sleep(2) 
+                    logger.warning("Разрыв Live-сессии, переподключение через 2с: %s", e)
+                    await asyncio.sleep(2)
             finally:
                 self._session = None
 
@@ -78,8 +82,8 @@ class GeminiLiveService(BaseLiveService):
                     turns=types.Content(role="user", parts=[types.Part(text=text)]),
                     turn_complete=True 
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Ошибка отправки текста в Live API: %s", e)
 
     async def send_audio(self, audio_bytes: bytes):
         if not audio_bytes or time.time() < self._mute_mic_until or self._active_tools_count > 0:
@@ -91,8 +95,8 @@ class GeminiLiveService(BaseLiveService):
                 await self._session.send_realtime_input(
                     audio=types.Blob(data=audio_bytes, mime_type="audio/pcm;rate=16000")
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Ошибка отправки аудио в Live API: %s", e)
 
     async def _receive_loop(self, on_audio_received) -> None:
         try:
@@ -113,8 +117,8 @@ class GeminiLiveService(BaseLiveService):
                                 # Запускаем обработку в фоне, чтобы не вешать веб-сокет
                                 asyncio.create_task(self._process_tool_call(function_call))
                                 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Ошибка приёма данных Live API: %s", e)
 
     async def _process_tool_call(self, function_call) -> None:
         """обработчик для инструмента"""
@@ -127,6 +131,7 @@ class GeminiLiveService(BaseLiveService):
             result_text = await tool.execute(**func_args)
             response_data = {"result": result_text}
         except Exception as e:
+            logger.error("Ошибка выполнения инструмента %s: %s", func_name, e)
             response_data = {"error": str(e)}
         finally: 
             self._active_tools_count -= 1
@@ -144,8 +149,8 @@ class GeminiLiveService(BaseLiveService):
                 )
             )
             self._mute_mic_until = time.time() + 2.0
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("Ошибка отправки ответа инструмента %s: %s", func_name, e)
 
     async def stop(self) -> None:
         self._is_running = False

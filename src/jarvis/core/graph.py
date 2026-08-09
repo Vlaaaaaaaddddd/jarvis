@@ -26,6 +26,7 @@ class TaskGraph:
         # системные узлы
         workflow.add_node("tools", self.system_nodes.tools_node)
         workflow.add_node("emergency_stop", self.system_nodes.emergency_node)
+        workflow.add_node("human_clarification", self.system_nodes.human_clarification_node)
         workflow.add_node("human_approval", self.system_nodes.human_approval_node)
         workflow.add_node("commit_node", self.system_nodes.commit_node)  
         workflow.add_node("abort_node", self.system_nodes.abort_node)    
@@ -69,9 +70,11 @@ class TaskGraph:
                 "continue": "tools", 
                 "supervisor": "supervisor",
                 "emergency": "emergency_stop",
+                "clarification": "human_clarification", 
                 "approval": "human_approval"
             }
         )
+        workflow.add_edge("human_clarification", "research_agent")
 
         # Маршрутизация от Инструментов (возврат к тому, кто вызвал)
         workflow.add_conditional_edges(
@@ -101,7 +104,7 @@ class TaskGraph:
 
         return workflow.compile(
             checkpointer=self.memory,
-            interrupt_before=["human_approval"]
+            interrupt_before=["human_approval", "human_clarification"]
         )
 
 
@@ -118,6 +121,8 @@ class TaskGraph:
                 update_data = {"user_approval": False, "user_feedback": None}
             elif approval_status == "revised":
                 update_data = {"user_approval": None, "user_feedback": query}
+            elif approval_status == "clarified":
+                update_data = {"user_feedback": query}
             else:
                 update_data = {"user_approval": None, "user_feedback": query}
                 
@@ -141,14 +146,21 @@ class TaskGraph:
         checkpoint = self.graph.get_state(config)
         if checkpoint.next:
             last_message = final_state["messages"][-1]
-            content = last_message.content
             
-            if not content and getattr(last_message, "tool_calls", None):
+            if getattr(last_message, "tool_calls", None):
+                # 1. Проверка на Апрув
                 approval_call = next((tc for tc in last_message.tool_calls if tc["name"] == "request_user_approval_tool"), None)
                 if approval_call:
-                    content = f"Я подготовил черновик:\n{approval_call['args'].get('draft_plan', '')}"
-            
-            return f"{content}\n\n[СИСТЕМНЫЙ СТАТУС]: Требуется подтверждение. Озвучь черновик."
+                    draft = approval_call['args'].get('draft_plan', '')
+                    return f"Я подготовил черновик:\n{draft}\n\n[СИСТЕМНЫЙ СТАТУС]: Требуется подтверждение. Озвучь черновик."
+
+                # 2. Проверка на Уточнение
+                clarify_call = next((tc for tc in last_message.tool_calls if tc["name"] == "ask_user_clarification_tool"), None)
+                if clarify_call:
+                    question = clarify_call['args'].get('question', '')
+                    return f"{question}\n\n[СИСТЕМНЫЙ СТАТУС]: Требуется уточнение. Задай вопрос пользователю."
+
+            return "Ожидаю действий пользователя..."
 
         last_message = final_state["messages"][-1]
         content = last_message.content
@@ -156,3 +168,5 @@ class TaskGraph:
         if isinstance(content, str) and "FINISH" in content.upper():
             if len(final_state["messages"]) > 1:
                 content = final_state["messages"][-2].content
+        
+        return content

@@ -3,9 +3,14 @@ import sys
 from dotenv import load_dotenv
 
 from bootstrap import create_app
+from jarvis.utils.logger import get_logger, setup_logging
 
 async def main():
     load_dotenv()
+    setup_logging()
+    logger = get_logger("main")
+    logger.info("Запуск JARVIS")
+
     engine = await create_app()
 
     try:

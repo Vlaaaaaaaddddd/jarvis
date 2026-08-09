@@ -102,7 +102,7 @@ flowchart TB
   - **Горячая память** (`user_profile`) — имя, работа, ключевые проекты
   - **Тёплая память** (`vector_memory`) — предпочтения, детали, истории
   - Удаляет устаревшие ключи из горячей памяти
-- Логи пишутся в `logs/memory_agent.log`
+- Логи пишутся в `logs/jarvis.log` (основное приложение) и `logs/memory_agent.log` (агент памяти)
 
 ---
 
@@ -328,7 +328,7 @@ uv sync
 
 - `.env` — API-ключи и пароли
 - `credentials.json`, `token.json` — Google OAuth
-- `logs/` — логи агента памяти
+- `logs/` — файлы логов (`jarvis.log`, `memory_agent.log`)
 
 ---
 

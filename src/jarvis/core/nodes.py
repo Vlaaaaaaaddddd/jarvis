@@ -80,7 +80,7 @@ class AgentNodes:
         """Агент поисковик (пока заглушка)"""
         self.logger.info("--- [NODE] RESEARCH AGENT ---")
 
-        allowed_names = ["search_user_memory", "internet_search_tool"] 
+        allowed_names = ["search_user_memory", "internet_search_tool", "ask_user_clarification_tool"] 
         research_tools = [self.tools[name] for name in allowed_names if name in self.tools]
         
         response = await self.llm.generate_stateless(
@@ -165,6 +165,29 @@ class SystemNodes:
         
         results = await asyncio.gather(*tasks)
         return {"messages": results}
+    
+    async def human_clarification_node(self, state: TaskState) -> Dict[str, Any]:
+        """Обработка уточняющих ответов пользователя"""
+        user_feedback = state.get("user_feedback")
+        messages = list(state.get("messages", []))
+        
+        last_ai_msg = messages[-1]
+        tool_call_id = None
+
+        if getattr(last_ai_msg, "tool_calls", None):
+            for tc in last_ai_msg.tool_calls:
+                if tc["name"] == "ask_user_clarification_tool":
+                    tool_call_id = tc["id"]
+                    break
+
+        new_messages = []
+        if tool_call_id:
+            content = f"[ОТВЕТ ПОЛЬЗОВАТЕЛЯ]: {user_feedback}" if user_feedback else "[СИСТЕМА]: Пользователь ничего не ответил."
+            
+            new_messages.append(
+                ToolMessage(content=content, name="ask_user_clarification_tool", tool_call_id=tool_call_id)
+            )
+        return {"messages": new_messages, "user_feedback": None}
 
     async def emergency_node(self, state: TaskState) -> Dict[str, Any]:
         msg = AIMessage(content="[СИСТЕМНОЕ СООБЩЕНИЕ] Выполнение прервано: превышен лимит шагов.")
@@ -209,14 +232,21 @@ class SystemNodes:
         for ev in events:
             self.logger.info(f"Авто-запись события: {ev}")
             if add_event_tool:
-                await add_event_tool.ainvoke(ev)
+                try:
+                    res = await add_event_tool.ainvoke(ev)
+                    self.logger.info(f"Результат API Google Calendar: {res}")
+                except Exception as e:
+                    self.logger.error(f"Ошибка при создании события в Календаре: {e}")
             await asyncio.sleep(0.5)
             
         for task in tasks:
             self.logger.info(f"Авто-запись задачи: {task}")
             if add_task_tool:
-                result = await add_task_tool.ainvoke(task)
-                self.logger.info(f"Результат API Google Tasks: {result}")
+                try:
+                    result = await add_task_tool.ainvoke(task)
+                    self.logger.info(f"Результат API Google Tasks: {result}")
+                except Exception as e:
+                    self.logger.error(f"Ошибка при создании задачи: {e}")
             await asyncio.sleep(0.5)
             
         msg = AIMessage(content="Отлично, я внес все события и задачи в твой календарь.")

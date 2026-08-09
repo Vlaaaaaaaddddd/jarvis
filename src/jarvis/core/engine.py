@@ -2,6 +2,9 @@ import asyncio
 import time
 from jarvis.config import BaseUI, BaseInputHandler, BaseOutputHandler, BaseLiveService, live_model_system_prompt
 from jarvis.core.graph import TaskGraph
+from jarvis.utils.logger import get_logger
+
+logger = get_logger("engine")
 
 class JarvisEngine:
     def __init__(self, 
@@ -58,7 +61,7 @@ class JarvisEngine:
             return dynamic_prompt
 
         except Exception as e:
-            self.ui.print_message(f"[System] Ошибка сборки динамического промпта: {e}")
+            logger.error("Ошибка сборки динамического промпта: %s", e)
             return base_prompt
 
     async def start(self):
@@ -103,6 +106,7 @@ class JarvisEngine:
             response = await self.task_graph.run(query, approval_status=approval_status, thread_id=self.session_id)
             return response
         except Exception as e:
+            logger.exception("Ошибка делегирования задачи: %s", query)
             return f"Внутренняя ошибка агента при обработке: {str(e)}"
         finally:
             self.ui.set_status("СИСТЕМА АКТИВНА")
@@ -123,6 +127,7 @@ class JarvisEngine:
             )
             return f"Успешно зафиксировано в памяти сессии факт: '{fact}'"
         except Exception as e:
+            logger.error("Ошибка записи факта в репозиторий: %s", e)
             return f"Ошибка при записи факта в репозиторий: {str(e)}"
 
     async def _handle_live_audio(self, audio_bytes: bytes) -> None:
@@ -144,7 +149,7 @@ class JarvisEngine:
             self.ui.set_status("РАБОТАЕТ АГЕНТ ПАМЯТИ")
             await self.memory_agent.consolidate()
         except Exception as e:
-            self.ui.print_message(f"[System] Ошибка памяти: {e}")
+            logger.exception("Ошибка консолидации памяти")
         finally:
             self.last_activity_time = time.time()
             self.is_consolidating = False

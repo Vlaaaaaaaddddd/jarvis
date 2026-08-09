@@ -1,23 +1,11 @@
 import json
-import logging
-import os
 from jarvis.config import MEMORY_AGENT_PROMPT
 from jarvis.db.repository import PostgresRepository
 from jarvis.services.memory_llm import MemoryLLMService 
 from jarvis.services.embeddings import EmbeddingService
+from jarvis.utils.logger import get_logger, MEMORY_LOG
 
-
-logger = logging.getLogger("jarvis.memory_agent")
-logger.setLevel(logging.DEBUG)
-logger.propagate = False
-
-if not logger.handlers:
-    os.makedirs("logs", exist_ok=True)
-    file_handler = logging.FileHandler("logs/memory_agent.log", encoding="utf-8")
-    file_handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+logger = get_logger("memory_agent", log_file=MEMORY_LOG)
 
 class MemoryAgent:
     def __init__(
@@ -29,7 +17,7 @@ class MemoryAgent:
         self.repo = repository
         self.llm = llm_service
         self.embedding_service = embedding_service
-        logger.info("Агент Памяти успешно инициализирован. Логирование запущено в logs/memory_agent.log")
+        logger.info("Агент памяти инициализирован")
 
     async def consolidate(self) -> None:
         """Основной цикл: сбор фактов, отправка в LLM, обновление БД"""

@@ -1,6 +1,9 @@
 import pyaudio
 import asyncio
 from jarvis.config import BaseOutputHandler
+from jarvis.utils.logger import get_logger
+
+logger = get_logger("output")
 
 class MainOutputHandler(BaseOutputHandler):
     def __init__(self, ui):
@@ -21,8 +24,8 @@ class MainOutputHandler(BaseOutputHandler):
                 output=True, 
                 frames_per_buffer=512
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("Не удалось инициализировать динамики: %s", e)
 
         self.audio_queue = asyncio.Queue()
         self._audio_running = True

@@ -22,21 +22,21 @@ def route_from_supervisor(state: TaskState) -> Literal["calendar_agent", "resear
     else:
         return "end" # кончил или не распознал команду
 
-def should_continue(state: TaskState) -> Literal["continue", "supervisor", "emergency", "approval"]:
+def should_continue(state: TaskState) -> Literal["continue", "supervisor", "emergency", "approval", "clarification"]:
     """Куда идти специалисту после его хода"""
     if state.get("steps_count", 0) >= 12:
         return "emergency"
     
     last_message = state["messages"][-1]
     
-    # Если вызван инструмент
     if getattr(last_message, "tool_calls", None):
         for tool_call in last_message.tool_calls:
             if tool_call["name"] == "request_user_approval_tool":
                 return "approval"
-        return "continue" # Идем в узел инструментов
+            if tool_call["name"] == "ask_user_clarification_tool":
+                return "clarification"
+        return "continue"
         
-    # Если агент выдал простой текстовый ответ, он возвращает управление Супервизору
     return "supervisor"
 
 def route_from_tools(state: TaskState) -> Literal["calendar_agent", "research_agent"]:

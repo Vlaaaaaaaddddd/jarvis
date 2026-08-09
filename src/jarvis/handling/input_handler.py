@@ -1,6 +1,9 @@
 import asyncio
 import pyaudio
 from jarvis.config import BaseInputHandler
+from jarvis.utils.logger import get_logger
+
+logger = get_logger("input")
 
 class MainInputHandler(BaseInputHandler):
     def __init__(self, ui):
@@ -23,8 +26,8 @@ class MainInputHandler(BaseInputHandler):
                 input=True,
                 frames_per_buffer=1024
             )
-        except Exception: 
-            pass
+        except Exception as e:
+            logger.error("Не удалось инициализировать микрофон: %s", e)
     async def microphone_loop(self, on_audio_callback):
         """Непрерывное чтение аудио и отправка через коллбек"""
         loop = asyncio.get_running_loop()
